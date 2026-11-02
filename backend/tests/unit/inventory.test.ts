@@ -5,7 +5,7 @@ import {
   restockStock,
   validateRequestedQuantity,
   validateStockQuantity
-} from '@/modules/inventory/domain/inventory.ts';
+} from '@/modules/inventory/domain/inventory';
 
 /**
  * Inventory rules must be deterministic and independent of HTTP or database

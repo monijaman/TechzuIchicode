@@ -5,7 +5,7 @@ import {
   resolveUnitPrice,
   validatePrice,
   validateQuantity
-} from '@/modules/sales/domain/pricing.ts';
+} from '@/modules/sales/domain/pricing';
 
 /**
  * These tests protect the pricing rules used when a master menu item is sold

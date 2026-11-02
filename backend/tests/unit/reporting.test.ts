@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rankTopSellingItems, sumRevenue } from '@/modules/reporting/domain/reporting.ts';
+import { rankTopSellingItems, sumRevenue } from '@/modules/reporting/domain/reporting';
 
 /**
  * Reporting calculations should be testable without a live database. Query
@@ -44,8 +44,8 @@ describe('reporting domain calculations', () => {
       { menuItemId: 'fries', quantity: 5 },
       { menuItemId: 'burger', quantity: 3 }
     ])).toEqual([
-      { menuItemId: 'fries', quantity: 5 },
-      { menuItemId: 'burger', quantity: 5 }
+      { menuItemId: 'burger', quantity: 5 },
+      { menuItemId: 'fries', quantity: 5 }
     ]);
   });
 

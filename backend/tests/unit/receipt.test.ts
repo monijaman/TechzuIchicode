@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextReceiptNumber } from '@/modules/sales/domain/receipt.ts';
+import { nextReceiptNumber } from '@/modules/sales/domain/receipt';
 
 /**
  * Receipt numbers are sequential within an outlet. The domain rule is tested

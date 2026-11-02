@@ -124,7 +124,7 @@ The tests are currently in the red phase of test-first development. The test run
 Current expected failure:
 
 ```text
-Cannot find module '@/app.ts'
+  Cannot find module '#/app.ts'
 ```
 
 This is expected until `backend/src/app.ts` is implemented.

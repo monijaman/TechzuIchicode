@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMenuItemSchema, createSaleSchema } from '@/modules/shared/validation/schemas.ts';
+import { createMenuItemSchema, createSaleSchema } from '@/modules/shared/validation/schemas';
 
 /**
  * Validation should reject malformed input before business services or the
