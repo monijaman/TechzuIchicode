@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+coverage/
+dist/
+build/
+
+# Structurizr Local generated files
+docs/.structurizr/
+docs/c4/
+docs/workspace.json

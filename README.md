@@ -99,6 +99,14 @@ npm run dev
 docker compose up --build
 ```
 
+The current Compose setup starts PostgreSQL and Structurizr Lite. View the C4 diagrams at <http://localhost:8080>:
+
+```bash
+docker compose up db structurizr
+```
+
+The application image in [`Dockerfile`](Dockerfile) is ready for the backend once `backend/package.json` and the backend source are added.
+
 ## API Endpoints
 
 Base URL: `/api`
@@ -130,7 +138,7 @@ The main entities are:
 - **Sale:** Transaction and sequential outlet receipt number
 - **SaleItem:** Items and quantities in a sale
 
-See [`docs/architecture.md`](docs/architecture.md) and [`docs/erd.png`](docs/erd.png).
+See [`docs/architecture.md`](docs/architecture.md), [`docs/workspace.dsl`](docs/workspace.dsl), and [`docs/erd.png`](docs/erd.png).
 
 ## Architecture
 
