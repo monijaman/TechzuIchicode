@@ -171,6 +171,8 @@ npm run test:coverage
 
 Cover menu assignment, outlet pricing, inventory deduction, insufficient stock, receipt sequencing, concurrent sales, and reports.
 
+See [`docs/testing.md`](docs/testing.md) for the detailed test plan and current implementation status.
+
 ## Deployment
 
 - **Live application:** <deployed-instance-url>
