@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { api, createCompanyAndOutlet, createMenuItem } from '../helpers/api.js';
+import { api, createCompanyAndOutlet, createMenuItem, registerHq } from '../helpers/api.js';
 
 /**
  * PostgreSQL constraints are the final protection against invalid data when
@@ -15,7 +15,8 @@ describe('database integrity constraints', () => {
   });
 
   it('rejects a sale referencing a deleted or unknown outlet', async () => {
-    await api.post('/api/outlets/00000000-0000-0000-0000-000000000000/sales')
+    const { auth } = await registerHq();
+    await api.post('/api/outlets/00000000-0000-0000-0000-000000000000/sales').set('Authorization', auth)
       .send({ items: [] }).expect(404);
   });
 

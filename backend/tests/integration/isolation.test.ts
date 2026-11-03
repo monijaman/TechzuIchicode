@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { api, createCompanyAndOutlet, createMenuItem } from '../helpers/api.js';
+import { api, createCompanyAndOutlet, createMenuItem, createOutletAs, registerHq } from '../helpers/api.js';
 
 /**
  * Each company and outlet must be isolated from every other tenant. These tests
@@ -18,13 +18,14 @@ describe('company and outlet data isolation', () => {
   });
 
   it('rejects access to another outlet inventory', async () => {
-    const first = await createCompanyAndOutlet();
-    const second = await createCompanyAndOutlet();
+    const first = await registerHq('First Company');
+    const second = await registerHq('Second Company');
+    const outlet = await createOutletAs(first.auth, first.company.id);
 
-    await api.get(`/api/outlets/${first.outlet.id}/inventory?companyId=${second.company.id}`).expect(403);
+    await api.get(`/api/outlets/${outlet.id}/inventory`).set('Authorization', second.auth).expect(403);
   });
 
   it('rejects unknown outlet IDs', async () => {
-    await api.get('/api/outlets/00000000-0000-0000-000000000000/menu').expect(404);
+    await api.get('/api/outlets/00000000-0000-0000-0000-000000000000/menu').expect(404);
   });
 });

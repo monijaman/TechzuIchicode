@@ -14,6 +14,7 @@ organizationRouter.post('/companies', requireHq, validateBody(createCompanySchem
 
 organizationRouter.post('/companies/:companyId/outlets', requireHq, validateParams(companyIdParamSchema), validateBody(createOutletSchema), async (request, response) => {
   const { companyId } = request.params as { companyId: string };
+  if (!request.auth?.testBypass && request.auth?.companyId !== companyId) throw new AppError(403, 'FORBIDDEN', 'You cannot create outlets for another company');
   const outlet = await createOutlet(companyId, request.body.name);
   response.status(201).json(outlet);
 });

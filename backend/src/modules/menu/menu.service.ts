@@ -4,25 +4,28 @@ import { AppError } from '@/http/errors';
 
 const toNumber = (value: Prisma.Decimal): number => value.toNumber();
 
-export async function createMenuItem(name: string, basePrice: number) {
+// `companyId` is undefined only for the NODE_ENV=test legacy-header adapter,
+// which still exercises the unscoped catalog contract.
+export async function createMenuItem(companyId: string | undefined, name: string, basePrice: number) {
   const item = await prisma.menuItem.create({
-    data: { name, basePrice: new Prisma.Decimal(basePrice) }
+    data: { companyId, name, basePrice: new Prisma.Decimal(basePrice) }
   });
   return { ...item, basePrice: toNumber(item.basePrice) };
 }
 
-export async function listMenuItems() {
-  const items = await prisma.menuItem.findMany({ orderBy: { name: 'asc' } });
+export async function listMenuItems(companyId: string | undefined) {
+  const items = await prisma.menuItem.findMany({ where: companyId ? { companyId } : {}, orderBy: { name: 'asc' } });
   return { items: items.map((item) => ({ ...item, basePrice: toNumber(item.basePrice) })) };
 }
 
-export async function assignMenuItem(outletId: string, menuItemId: string) {
+export async function assignMenuItem(companyId: string | undefined, outletId: string, menuItemId: string) {
   const [outlet, menuItem] = await Promise.all([
     prisma.outlet.findUnique({ where: { id: outletId }, select: { id: true } }),
-    prisma.menuItem.findUnique({ where: { id: menuItemId }, select: { id: true } })
+    prisma.menuItem.findUnique({ where: { id: menuItemId }, select: { companyId: true } })
   ]);
 
-  if (!outlet || !menuItem) {
+  // Another company's item is reported as missing so its existence does not leak.
+  if (!outlet || !menuItem || (companyId && menuItem.companyId !== companyId)) {
     throw new AppError(404, 'NOT_FOUND', !outlet ? 'Outlet was not found' : 'Menu item was not found');
   }
 
