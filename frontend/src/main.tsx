@@ -1,19 +1,89 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api';
-type Session = { accessToken: string; role: 'HQ' | 'OUTLET' };
+type Session = { accessToken: string; role: 'HQ' | 'OUTLET'; companyName?: string };
+type AuthResponse = { user: { role: 'HQ' | 'OUTLET' }; company?: { name: string }; tokens: { accessToken: string } };
+
+async function requestAuth(path: '/auth/login' | '/auth/register', body: Record<string, string>): Promise<AuthResponse> {
+  const response = await fetch(`${API}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message ?? 'Request failed');
+  return data;
+}
+
 async function call(path: string, token: string, options: RequestInit = {}) {
   const response = await fetch(`${API}${path}`, { ...options, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...options.headers } });
   if (!response.ok) throw new Error((await response.json()).error?.message ?? 'Request failed');
   return response.json();
 }
+
 function App() {
-  const [session, setSession] = useState<Session | null>(null); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [outletId, setOutletId] = useState(''); const [message, setMessage] = useState('');
-  const login = async () => { try { const data = await fetch(`${API}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email,password}) }).then(async r => { if (!r.ok) throw new Error((await r.json()).error?.message); return r.json(); }); setSession({accessToken:data.tokens.accessToken,role:data.user.role}); setMessage('Signed in'); } catch(e) { setMessage(e instanceof Error ? e.message : 'Login failed'); } };
-  if (!session) return <main><h1>F&B Outlet</h1><p>Sign in to manage operations.</p><input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}/><input placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)}/><button onClick={login}>Sign in</button><p>{message}</p></main>;
-  const loadMenu = async () => { try { const data=await call(`/outlets/${outletId}/menu`,session.accessToken); setMessage(`${data.items.length} assigned items loaded`); } catch(e) { setMessage(e instanceof Error?e.message:'Failed'); } };
-  return <main><header><h1>{session.role === 'HQ' ? 'HQ Management' : 'Outlet POS'}</h1><button onClick={()=>setSession(null)}>Sign out</button></header><label>Outlet ID<input value={outletId} onChange={e=>setOutletId(e.target.value)} placeholder="UUID"/></label><button onClick={loadMenu}>Load outlet menu</button>{session.role==='HQ' ? <section><h2>Catalog & reporting</h2><p>Create master items, assign them to outlets, set local prices, and review revenue/top-item reports.</p></section> : <section><h2>Point of sale</h2><p>Load assigned menu, build a cart, and submit a sale using an idempotency key.</p></section>}<p>{message}</p></main>;
+  const [session, setSession] = useState<Session | null>(null);
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [companyName, setCompanyName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [outletId, setOutletId] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const authenticate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage('');
+    try {
+      const data = mode === 'signup'
+        ? await requestAuth('/auth/register', { companyName, email, password })
+        : await requestAuth('/auth/login', { email, password });
+      setSession({ accessToken: data.tokens.accessToken, role: data.user.role, companyName: data.company?.name });
+      setPassword('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Authentication failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!session) {
+    const signup = mode === 'signup';
+    return <main>
+      <h1>Microservices  </h1>
+      <p>{signup ? 'Create your company and first HQ account.' : 'Sign in to manage operations.'}</p>
+      <form onSubmit={authenticate}>
+        {signup && <label>Company name<input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} /></label>}
+        <label>Email<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label>Password<input required type="password" minLength={signup ? 12 : 1} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        {signup && <small>Password must contain at least 12 characters.</small>}
+        <button type="submit" disabled={submitting}>{submitting ? 'Please wait…' : signup ? 'Create company' : 'Sign in'}</button>
+      </form>
+      <button className="link-button" type="button" onClick={() => { setMode(signup ? 'login' : 'signup'); setMessage(''); }}>
+        {signup ? 'Already have an account? Sign in' : 'New here? Create your company'}
+      </button>
+      {message && <p role="alert">{message}</p>}
+    </main>;
+  }
+
+  const loadMenu = async () => {
+    try {
+      const data = await call(`/outlets/${outletId}/menu`, session.accessToken);
+      setMessage(`${data.items.length} assigned items loaded`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed');
+    }
+  };
+
+  return <main>
+    <header><h1>{session.role === 'HQ' ? 'HQ Management' : 'Outlet POS'}</h1><button onClick={() => setSession(null)}>Sign out</button></header>
+    {session.companyName && <p>Welcome to {session.companyName}.</p>}
+    <label>Outlet ID<input value={outletId} onChange={(event) => setOutletId(event.target.value)} placeholder="UUID" /></label>
+    <button onClick={loadMenu}>Load outlet menu</button>
+    {session.role === 'HQ'
+      ? <section><h2>Catalog & reporting</h2><p>Create master items, assign them to outlets, set local prices, and review revenue/top-item reports.</p></section>
+      : <section><h2>Point of sale</h2><p>Load assigned menu, build a cart, and submit a sale using an idempotency key.</p></section>}
+    {message && <p role="status">{message}</p>}
+  </main>;
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+
+createRoot(document.getElementById('root')!).render(<App />);
