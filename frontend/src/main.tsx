@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -53,6 +53,37 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 const newIdempotencyKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const errorText = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback);
 
+type Errors = Record<string, string>;
+const required = (value: string, label: string) => (value.trim() ? undefined : `${label} is required`);
+const emailError = (value: string) => {
+  if (!value.trim()) return 'Email is required';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return 'Enter a valid email address';
+};
+const newPasswordError = (value: string) => {
+  if (!value) return 'Password is required';
+  if (value.length < 12) return 'Password must be at least 12 characters';
+  if (value.length > 128) return 'Password must be at most 128 characters';
+};
+const priceError = (value: string, label: string) => {
+  if (!value.trim()) return `${label} is required`;
+  if (!(Number(value) > 0)) return `${label} must be greater than 0`;
+  if (!/^\d+(\.\d{1,2})?$/.test(value.trim())) return `${label} can have at most 2 decimal places`;
+};
+const quantityError = (value: string, min: 0 | 1) => {
+  if (!value.trim()) return 'Quantity is required';
+  const quantity = Number(value);
+  if (!Number.isInteger(quantity) || quantity < min) return min === 0 ? 'Enter a whole number, 0 or more' : 'Enter a whole number, at least 1';
+};
+const chosen = (value: string, message: string) => (value ? undefined : message);
+
+function Field({ label, error, hint, children }: { label: string; error?: string; hint?: string; children: ReactNode }) {
+  return <label className={error ? 'field invalid' : 'field'}>
+    <span className="field-label">{label}</span>
+    {children}
+    {error ? <span className="field-error" role="alert">{error}</span> : hint && <span className="field-hint">{hint}</span>}
+  </label>;
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(loadSession);
   const sessionRef = useRef(session);
@@ -65,6 +96,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+  const [errors, setErrors] = useState<Errors>({});
 
   const [outletId, setOutletId] = useState(session?.outletId ?? '');
   const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
@@ -87,6 +119,26 @@ function App() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<Role>('HQ');
+
+  // Replaces the errors for the checked fields only, so other forms keep theirs.
+  const validate = (checks: Record<string, string | undefined>) => {
+    const found = Object.entries(checks).filter((entry): entry is [string, string] => Boolean(entry[1]));
+    setErrors((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(checks)) delete next[key];
+      return { ...next, ...Object.fromEntries(found) };
+    });
+    return found.length === 0;
+  };
+  const clearError = (key: string) => setErrors((current) => {
+    if (!(key in current)) return current;
+    const { [key]: _removed, ...rest } = current;
+    return rest;
+  });
+  const bind = (setter: (value: string) => void, key: string) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setter(event.target.value);
+    clearError(key);
+  };
 
   const updateSession = (next: Session | null) => {
     sessionRef.current = next;
@@ -150,8 +202,14 @@ function App() {
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitting(true);
     setMessage('');
+    const signup = mode === 'signup';
+    if (!validate({
+      companyName: signup ? required(companyName, 'Company name') : undefined,
+      email: emailError(email),
+      password: signup ? newPasswordError(password) : required(password, 'Password')
+    })) return;
+    setSubmitting(true);
     try {
       const data = mode === 'signup'
         ? await postJson<AuthResponse>('/auth/register', { companyName, email, password })
@@ -169,25 +227,28 @@ function App() {
 
   const signOut = () => {
     updateSession(null);
-    setOutletId(''); setOutlets([]); setMenuItems([]); setMessage('');
+    setOutletId(''); setOutlets([]); setMenuItems([]); setMessage(''); setErrors({});
   };
 
   if (!session) {
     const signup = mode === 'signup';
-    return <main>
-      <h1>F&amp;B Outlet Management</h1>
-      <p>{signup ? 'Create your company and first HQ account.' : 'Sign in to manage operations.'}</p>
-      <form onSubmit={authenticate}>
-        {signup && <label>Company name<input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} /></label>}
-        <label>Email<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label>Password<input required type="password" minLength={signup ? 12 : 1} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        {signup && <small>Password must contain at least 12 characters.</small>}
-        <button type="submit" disabled={submitting}>{submitting ? 'Please wait…' : signup ? 'Create company' : 'Sign in'}</button>
+    return <main className="auth">
+      <p className="brand">CliqCRM Services</p>
+      <h1>{signup ? 'Create your company' : 'Welcome back'}</h1>
+      <p className="subtitle">{signup ? 'Set up your company and its first HQ account.' : 'Sign in to manage your outlets.'}</p>
+      {message && <p className="alert" role="alert">{message}</p>}
+      <form onSubmit={authenticate} noValidate>
+        {signup && <Field label="Company name" error={errors.companyName}><input value={companyName} onChange={bind(setCompanyName, 'companyName')} /></Field>}
+        <Field label="Email" error={errors.email}><input type="email" autoComplete="email" value={email} onChange={bind(setEmail, 'email')} /></Field>
+        <Field label="Password" error={errors.password} hint={signup ? 'At least 12 characters.' : undefined}><input type="password" autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={bind(setPassword, 'password')} /></Field>
+        <button className="block" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : signup ? 'Create company' : 'Sign in'}</button>
       </form>
-      <button className="link-button" type="button" onClick={() => { setMode(signup ? 'login' : 'signup'); setMessage(''); }}>
-        {signup ? 'Already have an account? Sign in' : 'New here? Create your company'}
-      </button>
-      {message && <p role="alert">{message}</p>}
+      <p className="switch">
+        {signup ? 'Already have an account?' : 'New here?'}{' '}
+        <button className="link-button" type="button" onClick={() => { setMode(signup ? 'login' : 'signup'); setMessage(''); setErrors({}); }}>
+          {signup ? 'Sign in' : 'Create your company'}
+        </button>
+      </p>
     </main>;
   }
 
@@ -199,6 +260,7 @@ function App() {
 
   const createOutlet = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!validate({ outletName: required(outletName, 'Outlet name') })) return;
     void run(async () => {
       const outlet = await call(`/companies/${session.companyId}/outlets`, { method: 'POST', body: JSON.stringify({ name: outletName }) });
       setOutletName(''); await loadOutlets(); setOutletId(outlet.id);
@@ -206,13 +268,14 @@ function App() {
   };
   const createMenuItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!validate({ menuName: required(menuName, 'Item name'), menuPrice: priceError(menuPrice, 'Base price') })) return;
     void run(async () => {
       await call('/menu-items', { method: 'POST', body: JSON.stringify({ name: menuName, basePrice: Number(menuPrice) }) });
       setMenuName(''); setMenuPrice(''); await loadMenuItems();
     }, 'Failed to create menu item');
   };
   const updateBasePrice = () => {
-    if (!masterItemId || !basePriceEdit) return setMessage('Choose a menu item and a new base price');
+    if (!validate({ masterItemId: chosen(masterItemId, 'Choose a menu item'), basePriceEdit: priceError(basePriceEdit, 'New base price') })) return;
     void run(async () => {
       await call(`/menu-items/${masterItemId}`, { method: 'PUT', body: JSON.stringify({ basePrice: Number(basePriceEdit) }) });
       setBasePriceEdit(''); await loadMenuItems(); await loadOutletMenu();
@@ -224,28 +287,28 @@ function App() {
     await loadMenuItems();
   }, 'Failed to delete menu item', 'Menu item deleted');
   const assignMenuItem = () => {
-    if (!outletId || !masterItemId) return setMessage('Choose an outlet and a menu item first');
+    if (!validate({ outletId: chosen(outletId, 'Choose an outlet'), masterItemId: chosen(masterItemId, 'Choose a menu item') })) return;
     void run(async () => {
       await call(`/outlets/${outletId}/menu-items`, { method: 'POST', body: JSON.stringify({ menuItemId: masterItemId }) });
       await loadOutletMenu();
     }, 'Failed to assign menu item');
   };
   const unassignMenuItem = () => {
-    if (!outletId || !masterItemId) return setMessage('Choose an outlet and a menu item first');
+    if (!validate({ outletId: chosen(outletId, 'Choose an outlet'), masterItemId: chosen(masterItemId, 'Choose a menu item') })) return;
     void run(async () => {
       await call(`/outlets/${outletId}/menu-items/${masterItemId}`, { method: 'DELETE' });
       await loadOutletMenu(); await loadInventory();
     }, 'Failed to unassign menu item');
   };
   const setPrice = () => {
-    if (!outletId || !masterItemId || !overridePrice) return setMessage('Choose an outlet, a menu item, and a price first');
+    if (!validate({ outletId: chosen(outletId, 'Choose an outlet'), masterItemId: chosen(masterItemId, 'Choose a menu item'), overridePrice: priceError(overridePrice, 'Outlet price') })) return;
     void run(async () => {
       await call(`/outlets/${outletId}/menu-items/${masterItemId}/price`, { method: 'PUT', body: JSON.stringify({ price: Number(overridePrice) }) });
       setOverridePrice(''); await loadOutletMenu();
     }, 'Failed to update price');
   };
   const setStock = () => {
-    if (!outletItemId || stockQuantity === '') return setMessage('Choose an outlet menu item and a quantity first');
+    if (!validate({ outletItemId: chosen(outletItemId, 'Choose an item'), stockQuantity: quantityError(stockQuantity, 0) })) return;
     void run(async () => {
       await call(`/outlets/${outletId}/inventory/${outletItemId}`, { method: 'PUT', body: JSON.stringify({ quantity: Number(stockQuantity) }) });
       setStockQuantity(''); await loadInventory();
@@ -253,9 +316,8 @@ function App() {
   };
   const addToCart = () => {
     const item = outletMenu.find((entry) => entry.id === outletItemId);
+    if (!validate({ outletItemId: item ? undefined : 'Choose an item', cartQuantity: quantityError(cartQuantity, 1) }) || !item) return;
     const quantity = Number(cartQuantity);
-    if (!item) return setMessage('Choose an outlet menu item first');
-    if (!Number.isInteger(quantity) || quantity < 1) return setMessage('Quantity must be a whole number of at least 1');
     checkoutKey.current = null;
     setCart((current) => [...current.filter((line) => line.menuItemId !== item.id), { menuItemId: item.id, name: item.name, quantity }]);
   };
@@ -283,7 +345,11 @@ function App() {
   }, 'Failed to load reports');
   const createUser = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (newUserRole === 'OUTLET' && !outletId) return setMessage('Choose an outlet before creating an outlet user');
+    if (!validate({
+      newUserEmail: emailError(newUserEmail),
+      newUserPassword: newPasswordError(newUserPassword),
+      newUserRole: newUserRole === 'OUTLET' && !outletId ? 'Choose a working outlet above for outlet users' : undefined
+    })) return;
     void run(async () => {
       await call(`/companies/${session.companyId}/users`, { method: 'POST', body: JSON.stringify({ email: newUserEmail, password: newUserPassword, role: newUserRole, ...(newUserRole === 'OUTLET' && { outletId }) }) });
       setNewUserEmail(''); setNewUserPassword('');
@@ -293,26 +359,29 @@ function App() {
   const outletLabel = outlets.find((outlet) => outlet.id === outletId)?.name;
 
   return <main>
-    <header><h1>{isHq ? 'HQ Management' : 'Outlet POS'}</h1><button onClick={signOut}>Sign out</button></header>
-    {session.companyName && <p>Welcome to {session.companyName}.</p>}
-    {message && <p role="status">{message}</p>}
+    <header>
+      <div><p className="brand">CliqCRM Services</p><h1>{isHq ? 'HQ Management' : 'Outlet POS'}</h1></div>
+      <button className="secondary" onClick={signOut}>Sign out</button>
+    </header>
+    {session.companyName && <p className="subtitle">Welcome to {session.companyName}.</p>}
+    {message && <p className="notice" role="status">{message}</p>}
 
     {isHq && <section>
       <h2>Outlets</h2>
-      <form onSubmit={createOutlet}><label>New outlet name<input required value={outletName} onChange={(event) => setOutletName(event.target.value)} /></label><button type="submit">Create outlet</button></form>
-      <label>Working outlet<select value={outletId} onChange={(event) => setOutletId(event.target.value)}><option value="">Choose outlet</option>{outlets.map((outlet) => <option value={outlet.id} key={outlet.id}>{outlet.name}</option>)}</select></label>
+      <form onSubmit={createOutlet} noValidate><Field label="New outlet name" error={errors.outletName}><input value={outletName} onChange={bind(setOutletName, 'outletName')} /></Field><button type="submit">Create outlet</button></form>
+      <Field label="Working outlet" error={errors.outletId}><select value={outletId} onChange={bind(setOutletId, 'outletId')}><option value="">Choose outlet</option>{outlets.map((outlet) => <option value={outlet.id} key={outlet.id}>{outlet.name}</option>)}</select></Field>
     </section>}
 
     {isHq && <section>
       <h2>Master menu</h2>
-      <form onSubmit={createMenuItem}><label>Item name<input required value={menuName} onChange={(event) => setMenuName(event.target.value)} /></label><label>Base price<input required type="number" min="0.01" step="0.01" value={menuPrice} onChange={(event) => setMenuPrice(event.target.value)} /></label><button type="submit">Create menu item</button></form>
+      <form onSubmit={createMenuItem} noValidate><Field label="Item name" error={errors.menuName}><input value={menuName} onChange={bind(setMenuName, 'menuName')} /></Field><Field label="Base price" error={errors.menuPrice}><input type="number" inputMode="decimal" min="0.01" step="0.01" value={menuPrice} onChange={bind(setMenuPrice, 'menuPrice')} /></Field><button type="submit">Create menu item</button></form>
       {menuItems.length > 0 && <ul>{menuItems.map((item) => <li key={item.id}>{item.name} — {item.basePrice.toFixed(2)} <button className="inline-button" onClick={() => deleteMenuItem(item.id)}>Delete</button></li>)}</ul>}
-      <label>Menu item<select value={masterItemId} onChange={(event) => setMasterItemId(event.target.value)}><option value="">Choose item</option>{menuItems.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-      <label>New base price<input type="number" min="0.01" step="0.01" value={basePriceEdit} onChange={(event) => setBasePriceEdit(event.target.value)} /></label>
+      <Field label="Menu item" error={errors.masterItemId}><select value={masterItemId} onChange={bind(setMasterItemId, 'masterItemId')}><option value="">Choose item</option>{menuItems.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></Field>
+      <Field label="New base price" error={errors.basePriceEdit}><input type="number" inputMode="decimal" min="0.01" step="0.01" value={basePriceEdit} onChange={bind(setBasePriceEdit, 'basePriceEdit')} /></Field>
       <button onClick={updateBasePrice}>Update base price</button>
       <h3>For {outletLabel ?? 'the working outlet'}</h3>
       <button onClick={assignMenuItem}>Assign to outlet</button> <button onClick={unassignMenuItem}>Unassign from outlet</button>
-      <label>Outlet price override<input type="number" min="0.01" step="0.01" value={overridePrice} onChange={(event) => setOverridePrice(event.target.value)} /></label>
+      <Field label="Outlet price override" error={errors.overridePrice}><input type="number" inputMode="decimal" min="0.01" step="0.01" value={overridePrice} onChange={bind(setOverridePrice, 'overridePrice')} /></Field>
       <button onClick={setPrice}>Set outlet price</button>
     </section>}
 
@@ -322,17 +391,17 @@ function App() {
         <section>
           <h2>Outlet menu</h2>
           {outletMenu.length ? <ul>{outletMenu.map((item) => <li key={item.id}>{item.name} — {item.price.toFixed(2)}</li>)}</ul> : <p>No items assigned yet.</p>}
-          <label>Item<select value={outletItemId} onChange={(event) => setOutletItemId(event.target.value)}><option value="">Choose item</option>{outletMenu.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+          <Field label="Item" error={errors.outletItemId}><select value={outletItemId} onChange={bind(setOutletItemId, 'outletItemId')}><option value="">Choose item</option>{outletMenu.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></Field>
         </section>
         <section>
           <h2>Inventory</h2>
           {inventory.map((item) => <p key={item.menuItemId}>{item.name}: {item.quantity}</p>)}
-          <label>Stock quantity<input type="number" min="0" value={stockQuantity} onChange={(event) => setStockQuantity(event.target.value)} /></label>
+          <Field label="Stock quantity" error={errors.stockQuantity}><input type="number" inputMode="numeric" min="0" step="1" value={stockQuantity} onChange={bind(setStockQuantity, 'stockQuantity')} /></Field>
           <button onClick={setStock}>Set stock for selected item</button>
         </section>
         <section>
           <h2>POS checkout</h2>
-          <label>Quantity<input type="number" min="1" value={cartQuantity} onChange={(event) => setCartQuantity(event.target.value)} /></label>
+          <Field label="Quantity" error={errors.cartQuantity}><input type="number" inputMode="numeric" min="1" step="1" value={cartQuantity} onChange={bind(setCartQuantity, 'cartQuantity')} /></Field>
           <button onClick={addToCart}>Add selected item</button>
           {cart.map((line) => <p key={line.menuItemId}>{line.name} × {line.quantity}</p>)}
           <button onClick={checkout} disabled={!cart.length}>Checkout</button>
@@ -348,7 +417,7 @@ function App() {
 
     {isHq && <section>
       <h2>Users</h2>
-      <form onSubmit={createUser}><label>Email<input required type="email" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} /></label><label>Password<input required minLength={12} type="password" value={newUserPassword} onChange={(event) => setNewUserPassword(event.target.value)} /></label><label>Role<select value={newUserRole} onChange={(event) => setNewUserRole(event.target.value as Role)}><option value="HQ">HQ</option><option value="OUTLET">Outlet (working outlet)</option></select></label><button type="submit">Create user</button></form>
+      <form onSubmit={createUser} noValidate><Field label="Email" error={errors.newUserEmail}><input type="email" autoComplete="off" value={newUserEmail} onChange={bind(setNewUserEmail, 'newUserEmail')} /></Field><Field label="Password" error={errors.newUserPassword}><input type="password" autoComplete="new-password" value={newUserPassword} onChange={bind(setNewUserPassword, 'newUserPassword')} /></Field><Field label="Role" error={errors.newUserRole}><select value={newUserRole} onChange={bind((value) => setNewUserRole(value as Role), 'newUserRole')}><option value="HQ">HQ</option><option value="OUTLET">Outlet (working outlet)</option></select></Field><button type="submit">Create user</button></form>
     </section>}
   </main>;
 }
