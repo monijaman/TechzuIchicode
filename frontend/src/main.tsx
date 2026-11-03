@@ -31,6 +31,9 @@ function App() {
   const [menuName, setMenuName] = useState('');
   const [menuPrice, setMenuPrice] = useState('');
   const [menuItems, setMenuItems] = useState<Array<{ id: string; name: string; basePrice: number }>>([]);
+  const [selectedMenuItemId, setSelectedMenuItemId] = useState('');
+  const [overridePrice, setOverridePrice] = useState('');
+  const [outletMenu, setOutletMenu] = useState<Array<{ id: string; name: string; price: number }>>([]);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -107,13 +110,26 @@ function App() {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to create menu item'); }
   };
 
+  const loadOutletMenu = async () => {
+    if (!outletId) return setMessage('Select an outlet first');
+    try { setOutletMenu((await call(`/outlets/${outletId}/menu`, session.accessToken)).items); } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to load outlet menu'); }
+  };
+  const assignMenuItem = async () => {
+    if (!outletId || !selectedMenuItemId) return setMessage('Select an outlet and menu item first');
+    try { await call(`/outlets/${outletId}/menu-items`, session.accessToken, { method: 'POST', body: JSON.stringify({ menuItemId: selectedMenuItemId }) }); await loadOutletMenu(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to assign menu item'); }
+  };
+  const setPrice = async () => {
+    if (!outletId || !selectedMenuItemId || !overridePrice) return setMessage('Select an outlet, item, and price first');
+    try { await call(`/outlets/${outletId}/menu-items/${selectedMenuItemId}/price`, session.accessToken, { method: 'PUT', body: JSON.stringify({ price: Number(overridePrice) }) }); await loadOutletMenu(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to update price'); }
+  };
+
   return <main>
     <header><h1>{session.role === 'HQ' ? 'HQ Management' : 'Outlet POS'}</h1><button onClick={() => setSession(null)}>Sign out</button></header>
     {session.companyName && <p>Welcome to {session.companyName}.</p>}
     <label>Outlet ID<input value={outletId} onChange={(event) => setOutletId(event.target.value)} placeholder="UUID" /></label>
     <button onClick={loadMenu}>Load outlet menu</button>
     {session.role === 'HQ'
-      ? <section><h2>Outlets</h2><form onSubmit={createOutlet}><label>New outlet name<input required value={outletName} onChange={(event) => setOutletName(event.target.value)} /></label><button type="submit">Create outlet</button></form><button onClick={loadOutlets}>Load outlets</button>{outlets.length > 0 && <ul>{outlets.map((outlet) => <li key={outlet.id}><button className="link-button" onClick={() => setOutletId(outlet.id)}>{outlet.name}</button></li>)}</ul>}<h2>Master menu</h2><form onSubmit={createMenuItem}><label>Item name<input required value={menuName} onChange={(event) => setMenuName(event.target.value)} /></label><label>Base price<input required type="number" min="0.01" step="0.01" value={menuPrice} onChange={(event) => setMenuPrice(event.target.value)} /></label><button type="submit">Create menu item</button></form><button onClick={loadMenuItems}>Load menu items</button>{menuItems.length > 0 && <ul>{menuItems.map((item) => <li key={item.id}>{item.name} — {item.basePrice.toFixed(2)}</li>)}</ul>}<h2>Catalog & reporting</h2><p>Assign items to outlets, set local prices, and review revenue/top-item reports.</p></section>
+      ? <section><h2>Outlets</h2><form onSubmit={createOutlet}><label>New outlet name<input required value={outletName} onChange={(event) => setOutletName(event.target.value)} /></label><button type="submit">Create outlet</button></form><button onClick={loadOutlets}>Load outlets</button>{outlets.length > 0 && <ul>{outlets.map((outlet) => <li key={outlet.id}><button className="link-button" onClick={() => setOutletId(outlet.id)}>{outlet.name}</button></li>)}</ul>}<h2>Master menu</h2><form onSubmit={createMenuItem}><label>Item name<input required value={menuName} onChange={(event) => setMenuName(event.target.value)} /></label><label>Base price<input required type="number" min="0.01" step="0.01" value={menuPrice} onChange={(event) => setMenuPrice(event.target.value)} /></label><button type="submit">Create menu item</button></form><button onClick={loadMenuItems}>Load menu items</button>{menuItems.length > 0 && <ul>{menuItems.map((item) => <li key={item.id}>{item.name} — {item.basePrice.toFixed(2)}</li>)}</ul>}<h2>Outlet menu</h2><label>Menu item<select value={selectedMenuItemId} onChange={(event) => setSelectedMenuItemId(event.target.value)}><option value="">Choose item</option>{menuItems.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><button onClick={assignMenuItem}>Assign to selected outlet</button><label>Override price<input type="number" min="0.01" step="0.01" value={overridePrice} onChange={(event) => setOverridePrice(event.target.value)} /></label><button onClick={setPrice}>Set outlet price</button><button onClick={loadOutletMenu}>Load outlet menu</button>{outletMenu.length > 0 && <ul>{outletMenu.map((item) => <li key={item.id}>{item.name} — {item.price.toFixed(2)}</li>)}</ul>}<h2>Reporting</h2><p>Revenue and top-item reports are the next feature.</p></section>
       : <section><h2>Point of sale</h2><p>Load assigned menu, build a cart, and submit a sale using an idempotency key.</p></section>}
     {message && <p role="status">{message}</p>}
   </main>;
