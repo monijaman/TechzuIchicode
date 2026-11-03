@@ -44,7 +44,7 @@ describe('menu and outlet assignment API', () => {
     await api.post(`/api/outlets/${outlet.id}/menu-items`).send({ menuItemId: assigned.id }).expect(201);
     const menu = await api.get(`/api/outlets/${outlet.id}/menu`).expect(200);
 
-    expect(menu.body.items.map((item) => item.name)).toEqual(['Assigned']);
+    expect(menu.body.items.map((item: { name: string }) => item.name)).toEqual(['Assigned']);
   });
 
   it('rejects duplicate menu assignments', async () => {

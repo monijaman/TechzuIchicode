@@ -13,6 +13,8 @@ export default defineConfig({
     globals: true,
     clearMocks: true,
     restoreMocks: true,
+    // Integration files share one resettable PostgreSQL database.
+    fileParallelism: false,
     setupFiles: ['./tests/setup.js'],
     include: ['tests/**/*.test.ts'],
     testTimeout: 15_000,

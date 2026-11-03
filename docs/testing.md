@@ -119,30 +119,9 @@ The executable unit tests cover:
 
 ## Current status
 
-The tests are currently in the red phase of test-first development. The test runner and test contracts are ready, but the application implementation has not been created yet.
+The implemented backend includes Express routing, PostgreSQL/Prisma migrations, menu and inventory management, transactional sales with concurrent receipt allocation, reporting, offline idempotency, and local JWT authentication.
 
-Current expected failure:
-
-```text
-  Cannot find module '#/app.ts'
-```
-
-This is expected until `backend/src/app.ts` is implemented.
-
-The tests target pure domain functions so business rules can be verified without HTTP or database setup. They are organized around sales pricing, inventory, receipts, reporting, and shared validation.
-
-## Implementation order
-
-Tests should be made green in this order:
-
-1. Express application and error middleware
-2. Prisma schema and test database reset utilities
-3. Menu and outlet assignment endpoints
-4. Inventory endpoints and stock constraints
-5. Transactional sales and receipt numbering
-6. Reporting queries
-7. Unit-level pricing and calculation assertions
-8. Coverage, concurrency, and failure-path improvements
+Integration files share one resettable PostgreSQL database, so Vitest runs files serially. Production code does not accept test headers; they remain available only when `NODE_ENV=test` for legacy contract coverage.
 
 ## Future test coverage
 
@@ -171,8 +150,4 @@ The expanded integration suite now also covers:
 - Invalid and boundary-inclusive reporting date ranges
 - Database readiness failure responses
 
-Before production deployment, the simulated readiness failure should be replaced
-or supplemented with a controlled test that runs against an unavailable test
-database. Authorization tests should also use the real authentication mechanism
-once authentication is implemented; the current headers are test-contract
-placeholders.
+Before production deployment, add direct bearer-token registration/login/refresh integration tests, remove the test-only legacy-header adapter, add rate limits and password-reset flows, and supplement the readiness simulation with a controlled unavailable-database test.

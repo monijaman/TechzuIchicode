@@ -35,13 +35,9 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 ```text
 .
 ├── backend/src/
-│   ├── routes/
-│   ├── controllers/
-│   ├── services/
-│   ├── repositories/
-│   ├── middleware/
-│   ├── validators/
-│   └── config/
+│   ├── database/             # Prisma client and test reset
+│   ├── http/                 # validation, errors, authentication
+│   └── modules/              # auth, menu, inventory, sales, reporting
 ├── frontend/
 ├── database/migrations/
 ├── database/seeds/
@@ -51,8 +47,6 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 ├── Dockerfile
 └── README.md
 ```
-
-> Update this tree to match the final implementation.
 
 ## Prerequisites
 
@@ -74,16 +68,13 @@ npm install
 
 Create `.env` from `.env.example`:
 
-```env
-NODE_ENV=development
-PORT=5000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/fb_outlet
-```
+Copy `backend/.env.example` to `backend/.env`, then set `DATABASE_URL`, `JWT_ACCESS_SECRET`, and `JWT_REFRESH_SECRET`. Use distinct long random values for the two JWT secrets.
 
 ### 3. Run the database
 
 ```bash
-npm run db:migrate
+cd backend
+npm run db:deploy
 npm run db:seed
 ```
 
@@ -105,7 +96,7 @@ The current Compose setup starts PostgreSQL and Structurizr Lite. View the C4 di
 docker compose up db structurizr
 ```
 
-The application image in [`Dockerfile`](Dockerfile) is ready for the backend once `backend/package.json` and the backend source are added.
+The Compose file currently provisions PostgreSQL and Structurizr. Adding the backend/frontend application services is the next deployment task.
 
 ## API Endpoints
 
@@ -114,17 +105,30 @@ Base URL: `/api`
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/menu-items` | Create a master menu item |
-| `GET` | `/menu-items` | List master menu items |
+| `POST` | `/auth/register` | Create a company and first HQ account |
+| `POST` | `/auth/login` | Exchange email/password for access and refresh tokens |
+| `POST` | `/auth/refresh` | Rotate a refresh token |
+| `POST` | `/companies/:companyId/outlets` | Create an outlet |
+| `POST` | `/companies/:companyId/users` | Provision an HQ or outlet user |
 | `POST` | `/outlets/:outletId/menu-items` | Assign a menu item |
 | `GET` | `/outlets/:outletId/menu` | Get the outlet menu |
 | `PUT` | `/outlets/:outletId/menu-items/:menuItemId/price` | Override outlet price |
 | `GET` | `/outlets/:outletId/inventory` | View inventory |
 | `PUT` | `/outlets/:outletId/inventory/:menuItemId` | Update stock |
 | `POST` | `/outlets/:outletId/sales` | Create a sale |
+| `POST` | `/outlets/:outletId/sync/sales` | Idempotent offline sale synchronization |
 | `GET` | `/reports/outlets/:outletId/revenue` | View outlet revenue |
 | `GET` | `/reports/outlets/:outletId/top-items` | View top five items |
 
-> Add request and response examples for the main endpoints before submission.
+All non-auth API routes require `Authorization: Bearer <accessToken>`. Access tokens last 15 minutes; refresh tokens rotate and are persisted server-side. The offline-sync endpoint also requires `Idempotency-Key`.
+
+Example login:
+
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@example.com","password":"a-long-password"}'
+```
 
 ## Database Schema
 
@@ -137,6 +141,7 @@ The main entities are:
 - **Inventory:** Stock per outlet and menu item
 - **Sale:** Transaction and sequential outlet receipt number
 - **SaleItem:** Items and quantities in a sale
+- **User / RefreshToken:** Local accounts, scoped roles, and rotating refresh sessions
 
 See [`docs/architecture.md`](docs/architecture.md), [`docs/workspace.dsl`](docs/workspace.dsl), and [`docs/erd.png`](docs/erd.png).
 
@@ -153,7 +158,7 @@ Routes -> Controllers -> Services -> Repositories -> PostgreSQL
 - **Middleware** handles validation, authentication, and errors.
 - **Constraints and indexes** protect integrity and improve performance.
 
-Sales creation, inventory deduction, and receipt generation must run inside one database transaction so concurrent requests remain consistent.
+Sales creation, inventory deduction, receipt generation, and offline idempotency run in one database transaction so concurrent requests remain consistent.
 
 ## Validation and Error Handling
 
@@ -169,7 +174,7 @@ npm test
 npm run test:coverage
 ```
 
-Cover menu assignment, outlet pricing, inventory deduction, insufficient stock, receipt sequencing, concurrent sales, and reports.
+The focused integration suite covers menu assignment, inventory, concurrent sales, reports, offline retry behavior, and authorization boundaries. See [`docs/testing.md`](docs/testing.md) for verification scope and remaining gaps.
 
 See [`docs/testing.md`](docs/testing.md) for the detailed test plan and current implementation status.
 

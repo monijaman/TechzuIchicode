@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+  outlets   Outlet[]
+  menuItems MenuItem[]
+  users     User[]
+}
+
+model Outlet {
+  id              String          @id @default(uuid()) @db.Uuid
+  companyId       String          @db.Uuid
+  name            String
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  menuItems       OutletMenuItem[]
+  receiptCounter  ReceiptCounter?
+  sales           Sale[]
+  users           User[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+enum UserRole {
+  HQ
+  OUTLET
+}
+
+model User {
+  id           String         @id @default(uuid()) @db.Uuid
+  companyId    String         @db.Uuid
+  outletId     String?        @db.Uuid
+  email        String         @unique
+  passwordHash String
+  role         UserRole
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @db.Timestamptz(3)
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  outlet       Outlet?        @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  refreshTokens RefreshToken[]
+
+  @@index([companyId])
+  @@index([outletId])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model MenuItem {
+  id          String           @id @default(uuid()) @db.Uuid
+  companyId   String?          @db.Uuid
+  name        String
+  basePrice   Decimal          @db.Decimal(12, 2)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
+  company     Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  outletItems OutletMenuItem[]
+  saleItems   SaleItem[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model OutletMenuItem {
+  outletId      String    @db.Uuid
+  menuItemId    String    @db.Uuid
+  priceOverride Decimal?  @db.Decimal(12, 2)
+  assignedAt    DateTime  @default(now()) @db.Timestamptz(3)
+  outlet        Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  menuItem      MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  inventory     Inventory?
+
+  @@id([outletId, menuItemId])
+  @@index([menuItemId])
+}
+
+model Inventory {
+  outletId    String         @db.Uuid
+  menuItemId  String         @db.Uuid
+  quantity    Int            @default(0)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+  outletItem  OutletMenuItem @relation(fields: [outletId, menuItemId], references: [outletId, menuItemId], onDelete: Cascade)
+
+  @@id([outletId, menuItemId])
+}
+
+model ReceiptCounter {
+  outletId      String   @id @db.Uuid
+  lastIssued    Int      @default(0)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  outlet        Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+}
+
+model Sale {
+  id             String     @id @default(uuid()) @db.Uuid
+  outletId       String     @db.Uuid
+  receiptNumber  Int
+  idempotencyKey String?
+  idempotencyFingerprint String?
+  totalAmount    Decimal    @db.Decimal(12, 2)
+  soldAt         DateTime   @default(now()) @db.Timestamptz(3)
+  outlet         Outlet     @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  items          SaleItem[]
+
+  @@unique([outletId, receiptNumber])
+  @@unique([outletId, idempotencyKey])
+  @@index([outletId, soldAt])
+}
+
+model SaleItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  saleId      String   @db.Uuid
+  menuItemId  String   @db.Uuid
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  lineTotal   Decimal  @db.Decimal(12, 2)
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@unique([saleId, menuItemId])
+  @@index([menuItemId])
+}
