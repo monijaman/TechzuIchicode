@@ -10,3 +10,4 @@ build/
 docs/.structurizr/
 docs/c4/
 docs/workspace.json
+*.tsbuildinfo
