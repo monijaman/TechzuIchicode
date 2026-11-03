@@ -11,6 +11,11 @@ export async function createMenuItem(name: string, basePrice: number) {
   return { ...item, basePrice: toNumber(item.basePrice) };
 }
 
+export async function listMenuItems() {
+  const items = await prisma.menuItem.findMany({ orderBy: { name: 'asc' } });
+  return { items: items.map((item) => ({ ...item, basePrice: toNumber(item.basePrice) })) };
+}
+
 export async function assignMenuItem(outletId: string, menuItemId: string) {
   const [outlet, menuItem] = await Promise.all([
     prisma.outlet.findUnique({ where: { id: outletId }, select: { id: true } }),

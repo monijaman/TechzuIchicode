@@ -13,3 +13,7 @@ export async function createOutlet(companyId: string, name: string) {
 
   return prisma.outlet.create({ data: { companyId, name, receiptCounter: { create: {} } } });
 }
+
+export async function listOutlets(companyId: string) {
+  return prisma.outlet.findMany({ where: { companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
+}

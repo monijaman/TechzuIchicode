@@ -84,7 +84,7 @@ export async function registerHq(email: string, password: string, companyName: s
     include: { users: true }
   });
   const user = result.users[0];
-  return { company: { id: result.id, name: result.name }, user: { id: user.id, email: user.email, role: user.role }, tokens: await issueTokens(user) };
+  return { company: { id: result.id, name: result.name }, user: { id: user.id, email: user.email, role: user.role, companyId: user.companyId }, tokens: await issueTokens(user) };
 }
 
 export async function login(email: string, password: string) {
@@ -92,7 +92,7 @@ export async function login(email: string, password: string) {
   if (!user || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
     throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
-  return { user: { id: user.id, email: user.email, role: user.role }, tokens: await issueTokens(user) };
+  return { user: { id: user.id, email: user.email, role: user.role, companyId: user.companyId }, tokens: await issueTokens(user) };
 }
 
 export async function createUser(companyId: string, email: string, password: string, role: 'HQ' | 'OUTLET', outletId?: string) {

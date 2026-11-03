@@ -8,13 +8,17 @@ import {
   outletMenuItemParamsSchema,
   updateOutletMenuPriceSchema
 } from '@/modules/shared/validation/schemas';
-import { assignMenuItem, createMenuItem, getOutletMenu, updateMenuItemPrice } from './menu.service';
+import { assignMenuItem, createMenuItem, getOutletMenu, listMenuItems, updateMenuItemPrice } from './menu.service';
 
 export const menuRouter = Router();
 
 menuRouter.post('/menu-items', requireHq, validateBody(createMenuItemSchema), async (request, response) => {
   const item = await createMenuItem(request.body.name, request.body.basePrice);
   response.status(201).json(item);
+});
+
+menuRouter.get('/menu-items', requireHq, async (_request, response) => {
+  response.status(200).json(await listMenuItems());
 });
 
 menuRouter.post('/outlets/:outletId/menu-items', validateParams(outletIdParamSchema), requireOutletAccess, validateBody(assignMenuItemSchema), async (request, response) => {
