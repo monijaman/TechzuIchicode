@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api';
-type Session = { accessToken: string; role: 'HQ' | 'OUTLET'; companyName?: string };
-type AuthResponse = { user: { role: 'HQ' | 'OUTLET' }; company?: { name: string }; tokens: { accessToken: string } };
+type Session = { accessToken: string; role: 'HQ' | 'OUTLET'; companyId: string; companyName?: string };
+type AuthResponse = { user: { role: 'HQ' | 'OUTLET'; companyId: string }; company?: { name: string }; tokens: { accessToken: string } };
 
 async function requestAuth(path: '/auth/login' | '/auth/register', body: Record<string, string>): Promise<AuthResponse> {
   const response = await fetch(`${API}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -26,6 +26,8 @@ function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [outletId, setOutletId] = useState('');
+  const [outletName, setOutletName] = useState('');
+  const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -37,7 +39,7 @@ function App() {
       const data = mode === 'signup'
         ? await requestAuth('/auth/register', { companyName, email, password })
         : await requestAuth('/auth/login', { email, password });
-      setSession({ accessToken: data.tokens.accessToken, role: data.user.role, companyName: data.company?.name });
+      setSession({ accessToken: data.tokens.accessToken, role: data.user.role, companyId: data.user.companyId, companyName: data.company?.name });
       setPassword('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Authentication failed');
@@ -74,13 +76,29 @@ function App() {
     }
   };
 
+  const loadOutlets = async () => {
+    try {
+      const data = await call(`/companies/${session.companyId}/outlets`, session.accessToken);
+      setOutlets(data.items);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to load outlets'); }
+  };
+
+  const createOutlet = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      await call(`/companies/${session.companyId}/outlets`, session.accessToken, { method: 'POST', body: JSON.stringify({ name: outletName }) });
+      setOutletName('');
+      await loadOutlets();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to create outlet'); }
+  };
+
   return <main>
     <header><h1>{session.role === 'HQ' ? 'HQ Management' : 'Outlet POS'}</h1><button onClick={() => setSession(null)}>Sign out</button></header>
     {session.companyName && <p>Welcome to {session.companyName}.</p>}
     <label>Outlet ID<input value={outletId} onChange={(event) => setOutletId(event.target.value)} placeholder="UUID" /></label>
     <button onClick={loadMenu}>Load outlet menu</button>
     {session.role === 'HQ'
-      ? <section><h2>Catalog & reporting</h2><p>Create master items, assign them to outlets, set local prices, and review revenue/top-item reports.</p></section>
+      ? <section><h2>Outlets</h2><form onSubmit={createOutlet}><label>New outlet name<input required value={outletName} onChange={(event) => setOutletName(event.target.value)} /></label><button type="submit">Create outlet</button></form><button onClick={loadOutlets}>Load outlets</button>{outlets.length > 0 && <ul>{outlets.map((outlet) => <li key={outlet.id}><button className="link-button" onClick={() => setOutletId(outlet.id)}>{outlet.name}</button></li>)}</ul>}<h2>Catalog & reporting</h2><p>Create master items, assign them to outlets, set local prices, and review revenue/top-item reports.</p></section>
       : <section><h2>Point of sale</h2><p>Load assigned menu, build a cart, and submit a sale using an idempotency key.</p></section>}
     {message && <p role="status">{message}</p>}
   </main>;
