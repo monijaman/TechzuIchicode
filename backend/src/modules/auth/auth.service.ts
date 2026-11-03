@@ -84,7 +84,7 @@ export async function registerHq(email: string, password: string, companyName: s
     include: { users: true }
   });
   const user = result.users[0];
-  return { company: { id: result.id, name: result.name }, user: { id: user.id, email: user.email, role: user.role, companyId: user.companyId }, tokens: await issueTokens(user) };
+  return { company: { id: result.id, name: result.name }, user: { id: user.id, email: user.email, role: user.role, companyId: user.companyId, outletId: user.outletId }, tokens: await issueTokens(user) };
 }
 
 export async function login(email: string, password: string) {
@@ -92,7 +92,7 @@ export async function login(email: string, password: string) {
   if (!user || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
     throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
-  return { user: { id: user.id, email: user.email, role: user.role, companyId: user.companyId }, tokens: await issueTokens(user) };
+  return { user: { id: user.id, email: user.email, role: user.role, companyId: user.companyId, outletId: user.outletId }, tokens: await issueTokens(user) };
 }
 
 export async function createUser(companyId: string, email: string, password: string, role: 'HQ' | 'OUTLET', outletId?: string) {
@@ -114,7 +114,7 @@ export async function refresh(refreshToken: string) {
     throw new AppError(401, 'INVALID_TOKEN', 'Invalid refresh token');
   }
   await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-  return { user: { id: stored.user.id, email: stored.user.email, role: stored.user.role }, tokens: await issueTokens(stored.user) };
+  return { user: { id: stored.user.id, email: stored.user.email, role: stored.user.role, companyId: stored.user.companyId, outletId: stored.user.outletId }, tokens: await issueTokens(stored.user) };
 }
 
 export function authenticateAccessToken(token: string): AccessClaims {

@@ -13,6 +13,15 @@ export const createOutletSchema = z.object({
   name: z.string().trim().min(1)
 });
 
+export const updateMenuItemSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  basePrice: z.number().finite().positive().optional()
+}).refine((value) => value.name !== undefined || value.basePrice !== undefined, { message: 'Provide a name or basePrice' });
+
+export const menuItemIdParamSchema = z.object({
+  menuItemId: z.string().uuid()
+});
+
 export const assignMenuItemSchema = z.object({
   menuItemId: z.string().uuid()
 });

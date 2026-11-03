@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/database/prisma';
+import { hashPassword } from '@/modules/auth/auth.service';
+
+// Local demo credentials only; never seed these into a shared environment.
+const demoPassword = 'demo-password-123';
 
 async function main(): Promise<void> {
   await prisma.saleItem.deleteMany();
@@ -26,6 +30,13 @@ async function main(): Promise<void> {
   });
 
   const [downtown] = company.outlets;
+  const passwordHash = await hashPassword(demoPassword);
+  await prisma.user.createMany({
+    data: [
+      { companyId: company.id, email: 'hq@demo.local', passwordHash, role: 'HQ' },
+      { companyId: company.id, outletId: downtown.id, email: 'downtown@demo.local', passwordHash, role: 'OUTLET' }
+    ]
+  });
   const [burger] = company.menuItems;
   await prisma.outletMenuItem.create({
     data: {

@@ -4,11 +4,13 @@ import { validateBody, validateParams } from '@/http/errors';
 import {
   assignMenuItemSchema,
   createMenuItemSchema,
+  menuItemIdParamSchema,
   outletIdParamSchema,
   outletMenuItemParamsSchema,
+  updateMenuItemSchema,
   updateOutletMenuPriceSchema
 } from '@/modules/shared/validation/schemas';
-import { assignMenuItem, createMenuItem, getOutletMenu, listMenuItems, updateMenuItemPrice } from './menu.service';
+import { assignMenuItem, createMenuItem, deleteMenuItem, getOutletMenu, listMenuItems, unassignMenuItem, updateMenuItem, updateMenuItemPrice } from './menu.service';
 
 export const menuRouter = Router();
 
@@ -21,6 +23,23 @@ menuRouter.post('/menu-items', requireHq, validateBody(createMenuItemSchema), as
 
 menuRouter.get('/menu-items', requireHq, async (request, response) => {
   response.status(200).json(await listMenuItems(catalogCompanyId(request)));
+});
+
+menuRouter.put('/menu-items/:menuItemId', requireHq, validateParams(menuItemIdParamSchema), validateBody(updateMenuItemSchema), async (request, response) => {
+  const { menuItemId } = request.params as { menuItemId: string };
+  response.status(200).json(await updateMenuItem(catalogCompanyId(request), menuItemId, request.body));
+});
+
+menuRouter.delete('/menu-items/:menuItemId', requireHq, validateParams(menuItemIdParamSchema), async (request, response) => {
+  const { menuItemId } = request.params as { menuItemId: string };
+  await deleteMenuItem(catalogCompanyId(request), menuItemId);
+  response.sendStatus(204);
+});
+
+menuRouter.delete('/outlets/:outletId/menu-items/:menuItemId', requireHq, validateParams(outletMenuItemParamsSchema), requireOutletAccess, async (request, response) => {
+  const { outletId, menuItemId } = request.params as { outletId: string; menuItemId: string };
+  await unassignMenuItem(outletId, menuItemId);
+  response.sendStatus(204);
 });
 
 menuRouter.post('/outlets/:outletId/menu-items', requireHq, validateParams(outletIdParamSchema), requireOutletAccess, validateBody(assignMenuItemSchema), async (request, response) => {

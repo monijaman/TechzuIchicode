@@ -19,7 +19,7 @@ app.use((request, response, next) => {
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Vary', 'Origin');
     response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   }
   if (request.method === 'OPTIONS') return response.sendStatus(204);
   next();
