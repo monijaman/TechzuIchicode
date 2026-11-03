@@ -151,3 +151,16 @@ The expanded integration suite now also covers:
 - Database readiness failure responses
 
 Before production deployment, add direct bearer-token registration/login/refresh integration tests, remove the test-only legacy-header adapter, add rate limits and password-reset flows, and supplement the readiness simulation with a controlled unavailable-database test.
+
+## Bearer-token coverage
+
+`tenancy.test.ts` and `menu-management.test.ts` call `/auth/register` and `/auth/login` and send real `Authorization: Bearer` tokens, so they exercise the production authorization path instead of the legacy test headers. They cover:
+
+- Menu catalogs isolated per company (list, assign, update, delete)
+- HQ-only menu assignment and price overrides
+- Rejecting outlet creation and inventory access in another company
+- Outlet users reading their own menu
+- `outletId` and `companyId` returned on login and refresh
+- Menu item update, validation, delete, and the in-use guard for assigned or sold items
+
+The older suites still use the `NODE_ENV=test` header adapter. Moving them to bearer tokens and removing the adapter is the remaining step before production.
