@@ -2,6 +2,7 @@ import express from 'express';
 import { prisma } from '@/database/prisma';
 import { errorHandler, notFoundHandler } from '@/http/errors';
 import { requireAuth } from '@/http/auth';
+import { rateLimit } from '@/http/rate-limit';
 import { authRouter } from '@/modules/auth/auth.router';
 import { inventoryRouter } from '@/modules/inventory/inventory.router';
 import { menuRouter } from '@/modules/menu/menu.router';
@@ -25,6 +26,7 @@ app.use((request, response, next) => {
 });
 
 app.use(express.json());
+app.use('/api', rateLimit());
 
 app.get('/health', (_request, response) => {
   response.status(200).json({ status: 'ok' });
