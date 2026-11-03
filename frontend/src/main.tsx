@@ -28,6 +28,9 @@ function App() {
   const [outletId, setOutletId] = useState('');
   const [outletName, setOutletName] = useState('');
   const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
+  const [menuName, setMenuName] = useState('');
+  const [menuPrice, setMenuPrice] = useState('');
+  const [menuItems, setMenuItems] = useState<Array<{ id: string; name: string; basePrice: number }>>([]);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -92,13 +95,25 @@ function App() {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to create outlet'); }
   };
 
+  const loadMenuItems = async () => {
+    try { setMenuItems((await call('/menu-items', session.accessToken)).items); } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to load menu'); }
+  };
+
+  const createMenuItem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      await call('/menu-items', session.accessToken, { method: 'POST', body: JSON.stringify({ name: menuName, basePrice: Number(menuPrice) }) });
+      setMenuName(''); setMenuPrice(''); await loadMenuItems();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Failed to create menu item'); }
+  };
+
   return <main>
     <header><h1>{session.role === 'HQ' ? 'HQ Management' : 'Outlet POS'}</h1><button onClick={() => setSession(null)}>Sign out</button></header>
     {session.companyName && <p>Welcome to {session.companyName}.</p>}
     <label>Outlet ID<input value={outletId} onChange={(event) => setOutletId(event.target.value)} placeholder="UUID" /></label>
     <button onClick={loadMenu}>Load outlet menu</button>
     {session.role === 'HQ'
-      ? <section><h2>Outlets</h2><form onSubmit={createOutlet}><label>New outlet name<input required value={outletName} onChange={(event) => setOutletName(event.target.value)} /></label><button type="submit">Create outlet</button></form><button onClick={loadOutlets}>Load outlets</button>{outlets.length > 0 && <ul>{outlets.map((outlet) => <li key={outlet.id}><button className="link-button" onClick={() => setOutletId(outlet.id)}>{outlet.name}</button></li>)}</ul>}<h2>Catalog & reporting</h2><p>Create master items, assign them to outlets, set local prices, and review revenue/top-item reports.</p></section>
+      ? <section><h2>Outlets</h2><form onSubmit={createOutlet}><label>New outlet name<input required value={outletName} onChange={(event) => setOutletName(event.target.value)} /></label><button type="submit">Create outlet</button></form><button onClick={loadOutlets}>Load outlets</button>{outlets.length > 0 && <ul>{outlets.map((outlet) => <li key={outlet.id}><button className="link-button" onClick={() => setOutletId(outlet.id)}>{outlet.name}</button></li>)}</ul>}<h2>Master menu</h2><form onSubmit={createMenuItem}><label>Item name<input required value={menuName} onChange={(event) => setMenuName(event.target.value)} /></label><label>Base price<input required type="number" min="0.01" step="0.01" value={menuPrice} onChange={(event) => setMenuPrice(event.target.value)} /></label><button type="submit">Create menu item</button></form><button onClick={loadMenuItems}>Load menu items</button>{menuItems.length > 0 && <ul>{menuItems.map((item) => <li key={item.id}>{item.name} — {item.basePrice.toFixed(2)}</li>)}</ul>}<h2>Catalog & reporting</h2><p>Assign items to outlets, set local prices, and review revenue/top-item reports.</p></section>
       : <section><h2>Point of sale</h2><p>Load assigned menu, build a cart, and submit a sale using an idempotency key.</p></section>}
     {message && <p role="status">{message}</p>}
   </main>;
