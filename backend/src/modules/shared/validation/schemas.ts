@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const createMenuItemSchema = z.object({
   name: z.string().trim().min(1),
-  basePrice: z.number().finite().positive()
+  basePrice: z.number().finite().positive().max(9999999999.99)
 });
 
 export const createCompanySchema = z.object({
@@ -15,7 +15,7 @@ export const createOutletSchema = z.object({
 
 export const updateMenuItemSchema = z.object({
   name: z.string().trim().min(1).optional(),
-  basePrice: z.number().finite().positive().optional()
+  basePrice: z.number().finite().positive().max(9999999999.99).optional()
 }).refine((value) => value.name !== undefined || value.basePrice !== undefined, { message: 'Provide a name or basePrice' });
 
 export const menuItemIdParamSchema = z.object({
@@ -27,7 +27,7 @@ export const assignMenuItemSchema = z.object({
 });
 
 export const updateOutletMenuPriceSchema = z.object({
-  price: z.number().finite().positive()
+  price: z.number().finite().positive().max(9999999999.99)
 });
 
 export const companyIdParamSchema = z.object({
@@ -44,7 +44,7 @@ export const outletMenuItemParamsSchema = z.object({
 });
 
 export const updateInventorySchema = z.object({
-  quantity: z.number().int().nonnegative()
+  quantity: z.number().int().nonnegative().max(2147483647)
 });
 
 export const createInventorySchema = updateInventorySchema.extend({
@@ -54,7 +54,7 @@ export const createInventorySchema = updateInventorySchema.extend({
 export const createSaleSchema = z.object({
   items: z.array(z.object({
     menuItemId: z.string().trim().min(1),
-    quantity: z.number().int().positive()
+    quantity: z.number().int().positive().max(2147483647)
   })).min(1)
 });
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireHq } from '@/http/auth';
 import { AppError, validateBody, validateParams } from '@/http/errors';
 import { companyIdParamSchema, createCompanySchema, createOutletSchema, createUserSchema } from '@/modules/shared/validation/schemas';
-import { createCompany, createOutlet, listOutlets } from './organization.service';
+import { createCompany, createOutlet, listCompanyUsers, listOutlets } from './organization.service';
 import { createUser } from '@/modules/auth/auth.service';
 
 export const organizationRouter = Router();
@@ -23,6 +23,12 @@ organizationRouter.get('/companies/:companyId/outlets', requireHq, validateParam
   const { companyId } = request.params as { companyId: string };
   if (!request.auth?.testBypass && request.auth?.companyId !== companyId) throw new AppError(403, 'FORBIDDEN', 'You cannot view outlets for another company');
   response.status(200).json({ items: await listOutlets(companyId) });
+});
+
+organizationRouter.get('/companies/:companyId/users', requireHq, validateParams(companyIdParamSchema), async (request, response) => {
+  const { companyId } = request.params as { companyId: string };
+  if (!request.auth?.testBypass && request.auth?.companyId !== companyId) throw new AppError(403, 'FORBIDDEN', 'You cannot view users for another company');
+  response.status(200).json({ items: await listCompanyUsers(companyId) });
 });
 
 organizationRouter.post('/companies/:companyId/users', requireHq, validateParams(companyIdParamSchema), validateBody(createUserSchema), async (request, response) => {

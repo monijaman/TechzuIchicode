@@ -18,6 +18,22 @@ export async function listMenuItems(companyId: string | undefined) {
   return { items: items.map((item) => ({ ...item, basePrice: toNumber(item.basePrice) })) };
 }
 
+export async function listMenuItemOutlets(companyId: string | undefined, menuItemId: string) {
+  const menuItem = await findCatalogItem(companyId, menuItemId);
+  const assignments = await prisma.outletMenuItem.findMany({
+    where: { menuItemId, ...(companyId && { outlet: { companyId } }) },
+    include: { outlet: { select: { id: true, name: true } } },
+    orderBy: { outlet: { name: 'asc' } }
+  });
+  return {
+    items: assignments.map(({ outlet, priceOverride }) => ({
+      id: outlet.id,
+      name: outlet.name,
+      price: toNumber(priceOverride ?? menuItem.basePrice)
+    }))
+  };
+}
+
 async function findCatalogItem(companyId: string | undefined, menuItemId: string) {
   const item = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
   if (!item || (companyId && item.companyId !== companyId)) {
