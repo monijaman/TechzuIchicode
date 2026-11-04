@@ -47,7 +47,7 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 │   │   ├── app.ts              # middleware chain and routers
 │   │   ├── http/               # auth, validation, error, rate-limit middleware
 │   │   ├── database/           # Prisma client and test reset
-│   │   └── modules/            # auth, organization, menu, inventory, sales, reporting
+│   │   └── modules/            # auth, organization, menu, inventory, sales, reporting, offline-sync, shared
 │   └── tests/                  # unit and integration suites
 ├── frontend/src/               # React SPA
 ├── database/init/              # creates the test database in Docker
@@ -116,6 +116,20 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
    ```
 
    Set `FRONTEND_ORIGIN` in `backend/.env` to the Vite URL (usually `http://localhost:5173`) so the browser is allowed to call the API.
+
+### Environment variables
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `DATABASE_URL` | yes | none (Docker Compose builds it) | PostgreSQL connection string |
+| `JWT_ACCESS_SECRET` | yes in production | dev-only fallback | Signs 15-minute access tokens |
+| `JWT_REFRESH_SECRET` | yes in production | dev-only fallback | Signs 30-day refresh tokens. Must differ from the access secret |
+| `FRONTEND_ORIGIN` | yes | `http://localhost:3000` | The only origin CORS allows |
+| `PORT` | no | `5000` | API port |
+| `VITE_API_URL` | build time | `http://localhost:5000/api` | API base URL baked into the frontend build |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Docker only | `fb_outlet`, `fb_user`, `fb_password` | Database container credentials. Change them outside local use |
+
+The API refuses to start in production without both JWT secrets. A template is in [`backend/.env.example`](backend/.env.example). `.env` files are git-ignored.
 
 ### Demo logins (after seeding)
 
@@ -257,11 +271,47 @@ See the diagram in [`docs/erd.md`](docs/erd.md).
 
 ## Architecture
 
+### System overview
+
+```text
+HQ browser ─┐                         ┌─> PostgreSQL 16
+            ├─> React SPA (nginx) ──> Express API (Node 20)
+POS browser ┘                         └─> (future) cache, queue, read replica
+```
+
+The system is a **modular monolith**: one deployable API, with one module per business area (`auth`, `organization`, `menu`, `inventory`, `sales`, `reporting`, `offline-sync`). Each module is split into layers:
+
 ```text
 Router (validation + auth middleware) -> Service (business rules, transactions) -> Prisma -> PostgreSQL
 ```
 
-A modular monolith with one module per business area. Sale creation, stock deduction, receipt numbering, and idempotency run in one database transaction, so concurrent requests stay consistent. See [`docs/architecture.md`](docs/architecture.md) for the full design.
+### Key design decisions
+
+| Decision | Why |
+|---|---|
+| Modular monolith, not microservices | At 10 outlets, one service is simpler to run and test. Module boundaries already match future services |
+| One transaction per sale | Sale creation, stock deduction, receipt numbering and the idempotency check commit together or not at all |
+| Receipt counter row locked per outlet | Receipt numbers stay sequential under concurrency, and outlets never block each other |
+| Business rules also enforced in the database | `CHECK`, unique and foreign-key constraints still hold if application code is bypassed |
+| Price copied onto each sale line | Changing a price later never alters past receipts or reports |
+| Idempotency key on offline sales | A POS can safely retry after a timeout or reconnect without double-charging |
+| Stateless JWT auth | Any API instance can serve any request, so horizontal scaling needs no code changes |
+
+### Architecture documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | System overview, code structure, concurrency, security and tenancy, scaling, microservices evolution, offline POS/KDS |
+| [`docs/erd.md`](docs/erd.md) | Entity relationship diagram (Mermaid) and key data rules |
+| [`docs/workspace.dsl`](docs/workspace.dsl) | Structurizr C4 model: system context, containers and components |
+| [`docs/testing.md`](docs/testing.md) | Test approach, commands and coverage by feature |
+
+To view the C4 diagrams:
+
+```bash
+docker compose up structurizr
+# open http://localhost:8080
+```
 
 ## Validation and Error Handling
 
@@ -269,6 +319,39 @@ A modular monolith with one module per business area. Sale creation, stock deduc
 - Sales are rejected when stock is unavailable.
 - PostgreSQL enforces foreign keys, unique constraints, and `CHECK` constraints (positive prices, non-negative stock, positive quantities).
 - Central error middleware returns one consistent error shape and never exposes stack traces.
+
+## Security
+
+### In place
+
+- **Passwords:** hashed with scrypt and a random salt, compared in constant time, minimum 12 characters.
+- **Tokens:** HS256 JWTs. Access tokens last 15 minutes. Refresh tokens last 30 days, are stored hashed, and are rotated on every use, so a used refresh token is rejected.
+- **Authorization:** `HQ` and `OUTLET` roles. Every outlet route checks that the outlet belongs to the caller's company, and outlet users can only reach their own outlet.
+- **Tenant isolation:** another company's records are reported as `404 Not Found`, so their existence does not leak.
+- **Input validation:** Zod schemas on every body, path parameter and query string.
+- **CORS:** only `FRONTEND_ORIGIN` is allowed.
+- **Rate limiting:** 100 requests per minute per IP on `/api`, returning `429` with `Retry-After`.
+- **Secrets:** read from the environment and never committed. Production startup fails without them.
+- **SQL injection:** prevented by Prisma's parameterized queries.
+
+### Planned hardening
+
+These are known gaps, listed by priority:
+
+1. A stricter login limit and account lockout after repeated failures.
+2. An atomic refresh-token revoke. When a used token is presented again, revoke all of that user's sessions.
+3. A `POST /auth/logout` endpoint that revokes the refresh token.
+4. Security headers (`helmet`: HSTS, CSP, nosniff, frame-deny).
+5. Move the refresh token from `localStorage` to an `httpOnly`, `Secure`, `SameSite=Strict` cookie.
+6. Run the API container as a non-root user, and stop publishing the database port outside Docker.
+7. Audit logging for logins, user and role changes, and price changes, plus `npm audit` in CI.
+
+## Resilience
+
+- **Health checks:** `GET /health` shows the process is up. `GET /ready` checks the database, so a load balancer can stop sending traffic to an instance that can't reach it.
+- **Safe retries:** sales sent through `/sync/sales` are idempotent, so clients can retry freely.
+- **Rate limiting:** the limiter is in memory today. Behind a load balancer it moves to Redis with `trust proxy` enabled, and it should count per user or outlet rather than per IP, because the tills in one outlet often share one IP.
+- **Circuit breaker:** not added yet, on purpose. The API calls no external services, and its only dependency, PostgreSQL, has no fallback (a sale can't be saved without it). Database pool and statement timeouts are the right protection for now. A circuit breaker (for example `opossum`) will wrap the first external integration, such as payments or SMS, with a fallback for each call.
 
 ## Testing
 
@@ -279,7 +362,7 @@ npm test
 npm run test:coverage
 ```
 
-The suite has 108 unit and integration tests. It covers menu assignment and pricing, inventory, concurrent sales and receipts, reports, offline retries, constraints, and company and role isolation using real bearer tokens. CI runs the same suite on every push. See [`docs/testing.md`](docs/testing.md).
+The suite has 111 unit and integration tests in 19 files, all passing. It covers menu assignment and pricing, inventory, concurrent sales and receipts, reports, offline retries, constraints, and company and role isolation using real bearer tokens. CI runs the same suite on every push. See [`docs/testing.md`](docs/testing.md).
 
 ## Deployment
 
@@ -307,6 +390,15 @@ The modules map onto future services: identity, catalog, inventory, sales, repor
 
 The POS caches its menu and stock snapshot, writes each sale to a durable local queue with an idempotency key, and talks to the KDS over the local network while the internet is down. When it reconnects, it replays the queue through `/sync/sales`, which is implemented and tested to be safe on retry. See [`docs/architecture.md`](docs/architecture.md#7-offline-pos-and-kds-strategy).
 
+## Assumptions and Known Limitations
+
+- Each user belongs to one company. Outlet users belong to exactly one outlet.
+- A single currency is used, and amounts are stored as decimals.
+- Online sales are rejected when stock is short. Offline sales that would make stock negative are planned to be accepted and flagged instead (see [offline strategy](docs/architecture.md#7-offline-pos-and-kds-strategy)).
+- The offline queue and KDS link are designed but not built. The server side (`/sync/sales`) is implemented and tested.
+- Anyone can call `/auth/register` to create a company. A real deployment would require an invite or email verification.
+- Reports aggregate live data. Daily summary tables are planned for when history grows.
+
 ## Assessment Requirements
 
 - [ ] Deployed instance
@@ -315,7 +407,10 @@ The POS caches its menu and stock snapshot, writes each sale to a durable local 
 - [x] Layered architecture, validation, error middleware, and environment configuration
 - [x] PostgreSQL constraints and appropriate indexes
 - [x] Dockerfile and Docker Compose
-- [x] README, ERD, and architecture documentation
+- [x] README, ERD, and architecture documentation (including a C4 model)
+- [x] Authentication, role-based access, and tenant isolation
+- [x] Rate limiting and health/readiness checks
+- [x] Automated tests (111) running in CI
 - [x] Scaling strategy for 10 outlets and 100,000 monthly transactions
 - [x] Microservices evolution strategy
 - [x] Offline POS and KDS synchronization strategy
