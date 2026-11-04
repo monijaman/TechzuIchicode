@@ -134,14 +134,14 @@ function App() {
   // Replaces the errors for the checked fields only, so other forms keep theirs.
   const validate = (checks: Record<string, string | undefined>) => {
     const found = Object.entries(checks).filter((entry): entry is [string, string] => Boolean(entry[1]));
-    setErrors((current) => {
+    setFieldErrors((current) => {
       const next = { ...current };
       for (const key of Object.keys(checks)) delete next[key];
       return { ...next, ...Object.fromEntries(found) };
     });
     return found.length === 0;
   };
-  const clearError = (key: string) => setErrors((current) => {
+  const clearError = (key: string) => setFieldErrors((current) => {
     if (!(key in current)) return current;
     const { [key]: _removed, ...rest } = current;
     return rest;
@@ -469,13 +469,13 @@ function App() {
   };
   const addToCart = () => {
     const item = outletMenu.find((entry) => entry.id === outletItemId);
-    if (!validate({ outletItemId: item ? undefined : 'Choose an item', cartQuantity: quantityError(cartQuantity, 1) }) || !item) return;
+    if (!validate({ outletItemId: item ? undefined : 'Choose an item', cartQuantity: saleQuantityError(cartQuantity, outletItemId) }) || !item) return;
     const quantity = Number(cartQuantity);
     const itemError = item ? undefined : 'Choose a menu item.';
-    const quantityError = saleQuantityError(cartQuantity, outletItemId);
+    const cartQuantityError = saleQuantityError(cartQuantity, outletItemId);
     setFieldError('outletItemId', itemError);
-    setFieldError('cartQuantity', quantityError);
-    if (!item || quantityError) return setMessage('Fix the highlighted fields.');
+    setFieldError('cartQuantity', cartQuantityError);
+    if (!item || cartQuantityError) return setMessage('Fix the highlighted fields.');
     checkoutKey.current = null;
     setMessage(`Added ${item.name} × ${quantity} to the sale.`);
     setAddingAnotherSaleItem(false);
