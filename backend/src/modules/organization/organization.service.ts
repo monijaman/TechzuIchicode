@@ -17,3 +17,19 @@ export async function createOutlet(companyId: string, name: string) {
 export async function listOutlets(companyId: string) {
   return prisma.outlet.findMany({ where: { companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
 }
+
+export async function listCompanyUsers(companyId: string) {
+  return prisma.user.findMany({
+    where: { companyId },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      outletId: true,
+      isActive: true,
+      createdAt: true,
+      outlet: { select: { name: true } }
+    },
+    orderBy: [{ role: 'asc' }, { email: 'asc' }]
+  });
+}

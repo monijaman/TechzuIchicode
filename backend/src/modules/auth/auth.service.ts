@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { createHash, createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { prisma } from '@/database/prisma';
@@ -96,12 +97,21 @@ export async function login(email: string, password: string) {
 }
 
 export async function createUser(companyId: string, email: string, password: string, role: 'HQ' | 'OUTLET', outletId?: string) {
+  const normalizedEmail = email.trim().toLowerCase();
   if (role === 'OUTLET') {
     const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { companyId: true } });
     if (!outlet || outlet.companyId !== companyId) throw new AppError(404, 'NOT_FOUND', 'Outlet was not found for this company');
   }
-  const user = await prisma.user.create({ data: { companyId, email: email.trim().toLowerCase(), passwordHash: await hashPassword(password), role, outletId } });
-  return { id: user.id, email: user.email, role: user.role, outletId: user.outletId };
+  const passwordHash = await hashPassword(password);
+  try {
+    const user = await prisma.user.create({ data: { companyId, email: normalizedEmail, passwordHash, role, outletId } });
+    return { id: user.id, email: user.email, role: user.role, outletId: user.outletId };
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new AppError(409, 'EMAIL_ALREADY_EXISTS', 'An account with this email already exists');
+    }
+    throw error;
+  }
 }
 
 export async function refresh(refreshToken: string) {

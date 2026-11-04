@@ -10,7 +10,7 @@ import {
   updateMenuItemSchema,
   updateOutletMenuPriceSchema
 } from '@/modules/shared/validation/schemas';
-import { assignMenuItem, createMenuItem, deleteMenuItem, getOutletMenu, listMenuItems, unassignMenuItem, updateMenuItem, updateMenuItemPrice } from './menu.service';
+import { assignMenuItem, createMenuItem, deleteMenuItem, getOutletMenu, listMenuItemOutlets, listMenuItems, unassignMenuItem, updateMenuItem, updateMenuItemPrice } from './menu.service';
 
 export const menuRouter = Router();
 
@@ -23,6 +23,11 @@ menuRouter.post('/menu-items', requireHq, validateBody(createMenuItemSchema), as
 
 menuRouter.get('/menu-items', requireHq, async (request, response) => {
   response.status(200).json(await listMenuItems(catalogCompanyId(request)));
+});
+
+menuRouter.get('/menu-items/:menuItemId/outlets', requireHq, validateParams(menuItemIdParamSchema), async (request, response) => {
+  const { menuItemId } = request.params as { menuItemId: string };
+  response.status(200).json(await listMenuItemOutlets(catalogCompanyId(request), menuItemId));
 });
 
 menuRouter.put('/menu-items/:menuItemId', requireHq, validateParams(menuItemIdParamSchema), validateBody(updateMenuItemSchema), async (request, response) => {

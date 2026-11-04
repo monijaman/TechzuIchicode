@@ -46,6 +46,23 @@ describe('master menu management', () => {
     await api.delete(`/api/menu-items/${item.id}`).set('Authorization', hq.auth).expect(204);
   });
 
+  it('lists every company outlet assigned to a selected menu item', async () => {
+    const { hq, item } = await setup();
+    const firstOutlet = await createOutletAs(hq.auth, hq.company.id, 'First Outlet');
+    const secondOutlet = await createOutletAs(hq.auth, hq.company.id, 'Second Outlet');
+    await api.post(`/api/outlets/${firstOutlet.id}/menu-items`).set('Authorization', hq.auth).send({ menuItemId: item.id }).expect(201);
+    await api.post(`/api/outlets/${secondOutlet.id}/menu-items`).set('Authorization', hq.auth).send({ menuItemId: item.id }).expect(201);
+
+    const response = await api.get(`/api/menu-items/${item.id}/outlets`).set('Authorization', hq.auth).expect(200);
+    expect(response.body.items).toEqual([
+      { id: firstOutlet.id, name: firstOutlet.name, price: item.basePrice },
+      { id: secondOutlet.id, name: secondOutlet.name, price: item.basePrice }
+    ]);
+
+    const otherCompany = await registerHq('Other Company');
+    await api.get(`/api/menu-items/${item.id}/outlets`).set('Authorization', otherCompany.auth).expect(404);
+  });
+
   it('keeps sold items for receipt history', async () => {
     const { hq, item } = await setup();
     const outlet = await createOutletAs(hq.auth, hq.company.id);
@@ -67,5 +84,34 @@ describe('master menu management', () => {
 
     const refreshed = await api.post('/api/auth/refresh').send({ refreshToken: login.body.tokens.refreshToken }).expect(200);
     expect(refreshed.body.user).toMatchObject({ companyId: hq.company.id, outletId: outlet.id });
+  });
+
+  it('returns a field-specific conflict when creating a user with an existing email', async () => {
+    const hq = await registerHq();
+    const email = `duplicate-${crypto.randomUUID()}@example.com`;
+    const user = { email, password: 'a-long-test-password', role: 'HQ' };
+    await api.post(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth).send(user).expect(201);
+
+    const response = await api.post(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth).send(user).expect(409);
+    expect(response.body.error).toMatchObject({
+      code: 'EMAIL_ALREADY_EXISTS',
+      message: 'An account with this email already exists'
+    });
+  });
+
+  it('lists only company users and omits credentials', async () => {
+    const hq = await registerHq();
+    const outlet = await createOutletAs(hq.auth, hq.company.id);
+    await api.post(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth)
+      .send({ email: 'directory-outlet@example.com', password: 'a-long-test-password', role: 'OUTLET', outletId: outlet.id }).expect(201);
+    const otherCompany = await registerHq('Other Company');
+
+    const response = await api.get(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth).expect(200);
+    expect(response.body.items).toHaveLength(2);
+    expect(response.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ email: 'directory-outlet@example.com', role: 'OUTLET', outlet: { name: outlet.name } })
+    ]));
+    expect(JSON.stringify(response.body)).not.toContain('passwordHash');
+    await api.get(`/api/companies/${hq.company.id}/users`).set('Authorization', otherCompany.auth).expect(403);
   });
 });
