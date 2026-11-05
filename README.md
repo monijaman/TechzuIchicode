@@ -15,6 +15,7 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 - Create, edit, and delete master menu items (items with sales history are kept)
 - Assign and unassign menu items per outlet
 - Override menu prices per outlet
+- Create HQ and outlet users, and reassign outlet users to another company outlet
 - Retrieve only the menu items assigned to an outlet
 - Track inventory separately for each outlet
 - Create multi-item sales and deduct inventory in one transaction
@@ -55,7 +56,8 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 │   ├── architecture.md         # design, scaling, microservices, offline POS/KDS
 │   ├── erd.md                  # entity relationship diagram
 │   ├── testing.md              # test plan and coverage
-│   └── workspace.dsl           # Structurizr C4 model
+│   ├── workspace.dsl           # Structurizr C4 model source
+│   └── c4/                     # exported C4 diagram images and keys
 ├── .github/workflows/ci.yml
 ├── docker-compose.yml
 ├── Dockerfile                  # API image
@@ -72,20 +74,25 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 
 ### Option A: Docker (recommended)
 
-1. Create a `.env` file in the project root with two long, different random secrets:
+1. Create a `.env` file in the project root. Set a database password and two long, different random secrets:
 
    ```env
+   POSTGRES_PASSWORD=replace-with-a-strong-database-password
    JWT_ACCESS_SECRET=replace-with-a-long-random-value
    JWT_REFRESH_SECRET=replace-with-a-different-long-random-value
+   FRONTEND_ORIGIN=http://localhost:3105
+   VITE_API_URL=http://localhost:5105/api
    ```
 
 2. Start everything:
 
    ```bash
-   docker compose up --build
+   docker compose up -d --build
    ```
 
-3. Open the app at <http://localhost:3105>. The API container is published on port `5105`; check <http://localhost:5105/health> for its health status. API routes are under `/api` (there is no page at the `/api` root).
+3. Open the app at <http://localhost:3105>. The API is published on port `5105`; check <http://localhost:5105/health> for process health or <http://localhost:5105/ready> to check database readiness. API routes are under `/api`; the `/api` root is not a web page.
+
+   `VITE_API_URL` is baked into the frontend image at build time. If you change it, rebuild the frontend with `docker compose up -d --build frontend`. The database volume preserves its original credentials; changing `POSTGRES_PASSWORD` alone does not change a database that has already been initialized.
 
 4. Optional: load the demo data. This **wipes** the development database first.
 
@@ -124,12 +131,15 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
 | `DATABASE_URL` | yes | none (Docker Compose builds it) | PostgreSQL connection string |
 | `JWT_ACCESS_SECRET` | yes in production | dev-only fallback | Signs 15-minute access tokens |
 | `JWT_REFRESH_SECRET` | yes in production | dev-only fallback | Signs 30-day refresh tokens. Must differ from the access secret |
-| `FRONTEND_ORIGIN` | yes | `http://localhost:3000` | The only origin CORS allows |
-| `PORT` | no | `5000` | API port |
-| `VITE_API_URL` | build time | `http://localhost:5000/api` | API base URL baked into the frontend build |
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Docker only | `fb_outlet`, `fb_user`, `fb_password` | Database container credentials. Change them outside local use |
+| `FRONTEND_ORIGIN` | yes for browser access | Compose: `https://techzu.kossti.com` | The only origin CORS allows. Set to `http://localhost:3105` for local Docker use |
+| `PORT` | no | `5000` | API port inside the container |
+| `API_PORT` | no | `5105` | Host port mapped to the API container |
+| `FRONTEND_PORT` | no | `3105` | Host port mapped to the frontend container |
+| `VITE_API_URL` | Docker build time | Compose: `/api` | API base URL baked into the frontend build. For local Docker use, set `http://localhost:5105/api` |
+| `POSTGRES_DB`, `POSTGRES_USER` | Docker only | `fb_outlet`, `fb_user` | Database name and user |
+| `POSTGRES_PASSWORD` | Docker only | none | Required database password; choose a strong local value |
 
-The API refuses to start in production without both JWT secrets. A template is in [`backend/.env.example`](backend/.env.example). `.env` files are git-ignored.
+The API refuses to start in production without both JWT secrets. A template for local API development is in [`backend/.env.example`](backend/.env.example). Root and backend `.env` files are git-ignored.
 
 ### Demo logins (after seeding)
 
@@ -139,6 +149,13 @@ The API refuses to start in production without both JWT secrets. A template is i
 | Outlet (Downtown) | `downtown@demo.local` | `demo-password-123` |
 
 These are for local use only. Never seed a shared environment.
+
+### Common workflows
+
+- **Assign a menu:** Sign in as HQ, create items under **Menu → Catalog**, then open **Menu → Outlet assignment**, choose an outlet and item, and assign it. An optional outlet price override is available there.
+- **Manage an outlet's stock:** Choose the outlet in HQ's **Working outlet** selector and use **Operations → Inventory**, or sign in as that outlet user and open **Menu & stock**. Stock is stored per outlet and item; updating it sets that outlet's new total quantity.
+- **Move an outlet user:** Sign in as HQ and open **Users** in the sidebar. In **Team directory**, click **Change outlet** on an outlet-user row, select an outlet, and save. This changes the outlet association, not the user's role or password.
+- **View company reports:** Sign in as HQ and open **Reports** in the sidebar. The report shows revenue and the top five selling items for each outlet. Filter by one outlet or all outlets, and optionally choose a date range. Outlet users still have a report for their own outlet.
 
 ## API Endpoints
 
@@ -166,19 +183,22 @@ Base URL: `/api`. All routes except `/auth/*` need `Authorization: Bearer <acces
 | `PUT` | `/outlets/:outletId/inventory/:menuItemId` | HQ, outlet | Set stock |
 | `POST` | `/outlets/:outletId/sales` | HQ, outlet | Create a sale |
 | `POST` | `/outlets/:outletId/sync/sales` | HQ, outlet | Idempotent sale (requires `Idempotency-Key`) |
-| `GET` | `/reports/outlets/:outletId/revenue?from=&to=` | HQ, outlet | Revenue, optional date range |
+| `GET` | `/reports/company?outletId=&from=&to=` | HQ | Revenue and top five items per company outlet, with optional outlet/date filters |
+| `GET` | `/reports/outlets/:outletId/revenue?from=&to=` | HQ, outlet | Single-outlet revenue, optional date range |
 | `GET` | `/reports/outlets/:outletId/top-items?limit=5` | HQ, outlet | Top-selling items |
+
+The company report includes outlets with no sales in the selected date range (zero revenue and an empty top-items list). It is restricted to HQ users and only returns data from their company.
 
 Health checks: `GET /health` (process up) and `GET /ready` (database reachable).
 
-Outlet users can only access their own outlet. HQ users can only access outlets and menu items in their own company.
+Outlet users can only access their own outlet. HQ users can only access outlets and menu items in their own company. The outlet reassignment route only changes outlet users and only accepts outlets belonging to the user's company.
 
 ### Request and response examples
 
 **Log in**
 
 ```bash
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5105/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"hq@demo.local","password":"demo-password-123"}'
 ```
@@ -193,15 +213,15 @@ curl -X POST http://localhost:5000/api/auth/login \
 **Create a menu item and assign it with an outlet price**
 
 ```bash
-curl -X POST http://localhost:5000/api/menu-items -H "Authorization: Bearer $TOKEN" \
+curl -X POST http://localhost:5105/api/menu-items -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"name":"Iced Latte","basePrice":180}'
 # 201 {"id":"<itemId>","companyId":"…","name":"Iced Latte","basePrice":180,…}
 
-curl -X POST http://localhost:5000/api/outlets/$OUTLET/menu-items -H "Authorization: Bearer $TOKEN" \
+curl -X POST http://localhost:5105/api/outlets/$OUTLET/menu-items -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"menuItemId":"<itemId>"}'
 # 201
 
-curl -X PUT http://localhost:5000/api/outlets/$OUTLET/menu-items/<itemId>/price -H "Authorization: Bearer $TOKEN" \
+curl -X PUT http://localhost:5105/api/outlets/$OUTLET/menu-items/<itemId>/price -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"price":195}'
 # 200 {"outletId":"…","menuItemId":"<itemId>","priceOverride":195,…}
 ```
@@ -216,7 +236,7 @@ GET /api/outlets/:outletId/menu
 **Create a sale (offline-safe)**
 
 ```bash
-curl -X POST http://localhost:5000/api/outlets/$OUTLET/sync/sales -H "Authorization: Bearer $TOKEN" \
+curl -X POST http://localhost:5105/api/outlets/$OUTLET/sync/sales -H "Authorization: Bearer $TOKEN" \
   -H 'Idempotency-Key: pos-1-000123' -H 'Content-Type: application/json' \
   -d '{"items":[{"menuItemId":"<itemId>","quantity":2}]}'
 ```
@@ -240,7 +260,23 @@ GET /api/reports/outlets/:outletId/revenue?from=2026-11-01&to=2026-11-30
 
 GET /api/reports/outlets/:outletId/top-items?limit=5
 { "items": [ { "menuItemId": "…", "name": "Iced Latte", "quantity": 2 } ] }
+
+GET /api/reports/company?from=2026-11-01&to=2026-11-30
+{
+  "outlets": [
+    {
+      "outletId": "…",
+      "outletName": "Downtown",
+      "totalRevenue": 390,
+      "topItems": [ { "menuItemId": "…", "name": "Iced Latte", "quantity": 2 } ]
+    }
+  ],
+  "from": "2026-11-01",
+  "to": "2026-11-30"
+}
 ```
+
+Add `outletId=<uuid>` to the company report query to filter it to one outlet. Date-only `to` values include the entire day.
 
 **Errors** all share one shape:
 
@@ -270,49 +306,96 @@ GET /api/reports/outlets/:outletId/top-items?limit=5
 
 See the diagram in [`docs/erd.md`](docs/erd.md).
 
-## Architecture
+## Architecture, ERD, and C4
 
-### System overview
+### System architecture
 
 ```text
 HQ browser ─┐                         ┌─> PostgreSQL 16
             ├─> React SPA (nginx) ──> Express API (Node 20)
-POS browser ┘                         └─> (future) cache, queue, read replica
+POS browser ┘                         └─> future: cache, queue, read replica
 ```
 
-The system is a **modular monolith**: one deployable API, with one module per business area (`auth`, `organization`, `menu`, `inventory`, `sales`, `reporting`, `offline-sync`). Each module is split into layers:
+The application is a **modular monolith**: one deployable API organized around authentication, organization, menu, inventory, sales, reporting, and offline synchronization. Requests pass through validation and authorization middleware, then module services and Prisma, into PostgreSQL. PostgreSQL is the source of truth.
 
-```text
-Router (validation + auth middleware) -> Service (business rules, transactions) -> Prisma -> PostgreSQL
-```
+### Entity relationship diagram
 
-### Key design decisions
+The diagram summarizes the main database entities and relationships. `OutletMenuItem` connects an outlet to an assigned company menu item; inventory is attached to that assignment, so stock is tracked independently for each outlet and item.
 
-| Decision | Why |
+![Entity relationship diagram](docs/ERD/ERD.png)
+
+The complete schema, including constraints and key rules, is in [`docs/erd.md`](docs/erd.md) and [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma).
+
+### C4 architecture diagrams
+
+The diagrams below show the system context, runtime containers, and API components. They describe the current modular-monolith design; the offline queue is a design direction, not a local queue implementation.
+
+#### System context
+
+![C4 system context diagram](docs/c4/SystemContext-dark.png)
+
+#### Containers
+
+![C4 container diagram](docs/c4/Containers-dark.png)
+
+#### API components
+
+![C4 API components diagram](docs/c4/ApiComponents-dark.png)
+
+The Structurizr source is [`docs/workspace.dsl`](docs/workspace.dsl), with diagram keys in [`docs/c4/`](docs/c4). The C4 model and source are also documented in [`docs/architecture.md`](docs/architecture.md).
+
+### Design decisions
+
+| Decision | Rationale |
 |---|---|
-| Modular monolith, not microservices | At 10 outlets, one service is simpler to run and test. Module boundaries already match future services |
-| One transaction per sale | Sale creation, stock deduction, receipt numbering and the idempotency check commit together or not at all |
-| Receipt counter row locked per outlet | Receipt numbers stay sequential under concurrency, and outlets never block each other |
-| Business rules also enforced in the database | `CHECK`, unique and foreign-key constraints still hold if application code is bypassed |
-| Price copied onto each sale line | Changing a price later never alters past receipts or reports |
-| Idempotency key on offline sales | A POS can safely retry after a timeout or reconnect without double-charging |
-| Stateless JWT auth | Any API instance can serve any request, so horizontal scaling needs no code changes |
+| Modular monolith before microservices | A single deployable service is easier to operate at the current scale; module boundaries leave room to extract services if an actual need emerges. |
+| One database transaction per sale | Sale creation, stock deduction, receipt numbering, and idempotency commit together or roll back together. |
+| Receipt counter per outlet | Row-level updates serialize receipt allocation for one outlet without making outlets share a counter. |
+| Database constraints | Foreign keys, unique constraints, and checks enforce critical invariants even if application logic is bypassed. |
+| Sale-line price snapshot | Later menu price changes do not rewrite historical receipts or reports. |
+| Idempotency key for synchronized sales | Retrying a sale after a timeout does not create a duplicate sale or deduct stock twice. |
+| Stateless API authentication | Any API instance can serve a request, enabling horizontal scaling without session affinity. |
 
-### Architecture documentation
+## Scaling plan: 10 outlets and 100,000 transactions per month
 
-| Document | Contents |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | System overview, code structure, concurrency, security and tenancy, scaling, microservices evolution, offline POS/KDS |
-| [`docs/erd.md`](docs/erd.md) | Entity relationship diagram (Mermaid) and key data rules |
-| [`docs/workspace.dsl`](docs/workspace.dsl) | Structurizr C4 model: system context, containers and components |
-| [`docs/testing.md`](docs/testing.md) | Test approach, commands and coverage by feature |
+This is a forward-looking plan, not a claim that the current deployment has been load-tested at this volume. One hundred thousand transactions per month averages roughly 3,300 per day. Design for short peak periods (for example, lunch rushes), monitor real traffic, and scale based on measured saturation rather than outlet count alone.
 
-To view the C4 diagrams:
+### Database scaling strategies
 
-```bash
-docker compose up structurizr
-# open http://localhost:8080
-```
+- **Keep PostgreSQL as the transactional source of truth.** Start with a suitably sized managed PostgreSQL instance or a well-maintained single primary. At this volume, a sharded or multi-primary database is not the first step.
+- **Preserve the current constraints and indexes.** Indexes on outlet and sale date, sale-item menu item, and unique per-outlet receipt and idempotency keys support tenant-scoped lookups, reporting, and correctness.
+- **Keep the write transaction short.** Sale creation performs only database work in its transaction. The per-outlet receipt counter and conditional stock decrement protect concurrency while avoiding cross-outlet receipt contention.
+- **Manage connections.** Monitor connection count, query latency, locks, and pool wait time. Use connection pooling; add PgBouncer if multiple API instances would otherwise exhaust PostgreSQL connections.
+- **Scale vertically first and protect recovery.** Increase database CPU, memory, or I/O when metrics show a bottleneck. Automate backups, test restores, and enable point-in-time recovery before relying on the system operationally.
+- **Partition only when data size justifies it.** If sales tables grow to tens of millions of rows and retention queries or maintenance become costly, evaluate time-based partitioning and archive old partitions. Partitioning adds operational complexity and is not required by the target volume alone.
+
+### Reporting performance
+
+- The HQ company report aggregates revenue and ranks sold items for each selected company outlet. The `(outletId, soldAt)` index supports outlet/date filtering; top-selling items group sale lines for that outlet.
+- Keep reporting queries bounded and measure execution plans and latency against production-like data. Do not send expensive report aggregation to the primary without monitoring its impact on checkout writes.
+- If live reports begin competing with sales, add a read replica for reporting and accept/document its replication lag.
+- If history grows enough that indexed live aggregation is no longer responsive, build daily outlet and item summaries asynchronously. Feed summaries from a durable outbox or equivalent replayable event stream, make processing idempotent, and reconcile summaries against the source sales.
+- The company dashboard returns the selected outlets in one scoped report request. As data grows, keep the query bounded with date filters and move read load to a replica or summary table if measurement shows that is needed.
+
+### Infrastructure considerations
+
+- Keep the API stateless and containerized. Add a second or more API instances behind a load balancer when measured request load, availability requirements, or deployments warrant it.
+- Put the database on a private network, configure connection limits and timeouts, and use `/health` and `/ready` appropriately for process and dependency checks.
+- Move the in-memory rate limiter to a shared store such as Redis before running multiple API instances, so limits are consistent across instances.
+- Add structured logs with request IDs, metrics for latency/errors/throughput and database saturation, alerting, centralized log retention, and tested backup/restore procedures.
+- Use rolling or otherwise health-checked deployments, and verify database migrations are compatible with the running application version before rollout.
+
+### Architectural evolution
+
+Keep the modular monolith while it meets requirements. First improve observability, connection management, and reporting read paths; these steps address likely bottlenecks without distributed-system overhead. If independent scaling or team ownership later requires service extraction, use module boundaries:
+
+1. Add repository interfaces where they provide a useful separation between business logic and persistence.
+2. Publish durable domain events through a transactional outbox so database writes and event publication cannot silently diverge.
+3. Extract reporting first into a read-optimized service/model because it is a read path and can be rebuilt from source events.
+4. Extract identity, catalog, inventory, sales, or offline synchronization only when there is a measured scaling or organizational need.
+5. Keep sale and inventory updates in one database transaction until they are separated. Afterward, use stock reservations, idempotent commands, and a saga with compensation; do not rely on a distributed database transaction.
+
+See [`docs/architecture.md`](docs/architecture.md) for additional detail on concurrency, tenancy, service boundaries, and future offline POS/KDS operation.
 
 ## Validation and Error Handling
 
@@ -363,29 +446,13 @@ npm test
 npm run test:coverage
 ```
 
-The suite has 111 unit and integration tests in 19 files, all passing. It covers menu assignment and pricing, inventory, concurrent sales and receipts, reports, offline retries, constraints, and company and role isolation using real bearer tokens. CI runs the same suite on every push. See [`docs/testing.md`](docs/testing.md).
+The unit and integration suites cover menu assignment and pricing, outlet-specific inventory, concurrent sales and receipts, reports, offline retries, constraints, and company and role isolation using real bearer tokens. Run them with PostgreSQL available as described in [`docs/testing.md`](docs/testing.md). CI runs the suite on every push.
 
 ## Deployment
 
 - **Live application:** _not deployed yet_
 - **API documentation:** see [API Endpoints](#api-endpoints) above
 - **Repository:** <https://github.com/monijaman/TechzuIchicode>
-
-## Scaling Strategy
-
-For 10 outlets and about 100,000 transactions a month (a peak of roughly 5–10 sales a second):
-
-- Indexes are already in place on outlet and sale date, receipt number, sale items, and idempotency keys.
-- Use connection pooling (PgBouncer) and read replicas for reports.
-- Add a background job that maintains daily summary tables once history grows.
-- The API is stateless, so it can scale horizontally behind a load balancer. Move the rate limiter to Redis at that point.
-- Add centralized logging, monitoring, backups, and alerting.
-
-Details are in [`docs/architecture.md`](docs/architecture.md#5-scaling-strategy-10-outlets-about-100000-transactions-a-month).
-
-## Future Architectural Evolution
-
-The modules map onto future services: identity, catalog, inventory, sales, reporting, and a sync gateway. The migration path uses an outbox and domain events, extracts reporting first, and replaces the shared sale transaction with a stock-reservation saga only after sales and inventory are split. See [`docs/architecture.md`](docs/architecture.md#6-microservices-evolution).
 
 ## Offline POS Mode Strategy
 
@@ -411,7 +478,7 @@ The POS caches its menu and stock snapshot, writes each sale to a durable local 
 - [x] README, ERD, and architecture documentation (including a C4 model)
 - [x] Authentication, role-based access, and tenant isolation
 - [x] Rate limiting and health/readiness checks
-- [x] Automated tests (111) running in CI
+- [x] Automated unit and integration tests running in CI
 - [x] Scaling strategy for 10 outlets and 100,000 monthly transactions
 - [x] Microservices evolution strategy
 - [x] Offline POS and KDS synchronization strategy

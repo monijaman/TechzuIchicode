@@ -1,10 +1,15 @@
 import { Router } from 'express';
-import { requireOutletAccess } from '@/http/auth';
+import { requireHq, requireOutletAccess } from '@/http/auth';
 import { validateParams, validateQuery } from '@/http/errors';
-import { outletIdParamSchema, revenueReportQuerySchema, topItemsReportQuerySchema } from '@/modules/shared/validation/schemas';
-import { getRevenueReport, getTopItemsReport } from './reporting.service';
+import { companyReportQuerySchema, outletIdParamSchema, revenueReportQuerySchema, topItemsReportQuerySchema } from '@/modules/shared/validation/schemas';
+import { getCompanySalesReport, getRevenueReport, getTopItemsReport } from './reporting.service';
 
 export const reportingRouter = Router();
+
+reportingRouter.get('/reports/company', requireHq, validateQuery(companyReportQuerySchema), async (request, response) => {
+  const filter = response.locals.query as { outletId?: string; from?: string; to?: string };
+  response.status(200).json(await getCompanySalesReport(request.auth!.companyId, filter));
+});
 
 reportingRouter.get('/reports/outlets/:outletId/revenue', validateParams(outletIdParamSchema), requireOutletAccess, validateQuery(revenueReportQuerySchema), async (request, response) => {
   const { outletId } = request.params as { outletId: string };

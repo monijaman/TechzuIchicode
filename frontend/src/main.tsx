@@ -12,6 +12,7 @@ type AuthResponse = { user: AuthUser; company?: { name: string }; tokens: { acce
 type MenuItem = { id: string; name: string; basePrice: number };
 type OutletMenuItem = { id: string; name: string; price: number };
 type ItemCount = { menuItemId: string; name: string; quantity: number };
+type OutletSalesReport = { outletId: string; outletName: string; totalRevenue: number; topItems: ItemCount[] };
 type CompanyUser = { id: string; email: string; role: Role; outletId: string | null; isActive: boolean; createdAt: string; outlet: { name: string } | null };
 type ApiErrorDetails = Array<{ path: string; message: string }>;
 
@@ -89,9 +90,9 @@ function App() {
   const [authErrors, setAuthErrors] = useState<{ companyName?: string; email?: string; password?: string }>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [hqSection, setHqSection] = useState<'overview' | 'outlets' | 'menu' | 'operations' | 'users'>('overview');
+  const [hqSection, setHqSection] = useState<'overview' | 'outlets' | 'menu' | 'operations' | 'reports' | 'users'>('overview');
   const [menuSection, setMenuSection] = useState<'catalog' | 'base-pricing' | 'outlet-assignment'>('catalog');
-  const [operationSection, setOperationSection] = useState<'menu' | 'inventory' | 'sales' | 'reports'>('menu');
+  const [operationSection, setOperationSection] = useState<'menu' | 'inventory' | 'sales'>('menu');
   const [outletSection, setOutletSection] = useState<'menu' | 'sales' | 'reports'>('menu');
   const [outletId, setOutletId] = useState(session?.outletId ?? '');
   const [assignmentOutletId, setAssignmentOutletId] = useState(session?.outletId ?? '');
@@ -119,6 +120,10 @@ function App() {
   const [receipt, setReceipt] = useState('');
   const [revenue, setRevenue] = useState<number | null>(null);
   const [topItems, setTopItems] = useState<ItemCount[]>([]);
+  const [companyReports, setCompanyReports] = useState<OutletSalesReport[] | null>(null);
+  const [reportOutletFilter, setReportOutletFilter] = useState('');
+  const [reportFrom, setReportFrom] = useState('');
+  const [reportTo, setReportTo] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<Role>('HQ');
@@ -528,6 +533,16 @@ function App() {
     ]);
     setRevenue(revenueReport.totalRevenue); setTopItems(topItemsReport.items);
   }, 'Failed to load reports');
+  const loadCompanyReports = () => void run(async () => {
+    const params = new URLSearchParams();
+    if (reportOutletFilter) params.set('outletId', reportOutletFilter);
+    if (reportFrom) params.set('from', reportFrom);
+    if (reportTo) params.set('to', reportTo);
+    const queryString = params.toString();
+    const query = queryString ? `?${queryString}` : '';
+    const result = await call(`/reports/company${query}`);
+    setCompanyReports(result.outlets);
+  }, 'Failed to load company reports');
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setUserSuccess('');
@@ -604,6 +619,7 @@ function App() {
     { id: 'outlets', label: 'Outlets' },
     { id: 'menu', label: 'Menu' },
     { id: 'operations', label: 'Operations' },
+    { id: 'reports', label: 'Reports' },
     { id: 'users', label: 'Users' }
   ] as const;
 
@@ -659,7 +675,7 @@ function App() {
             </div>
             <section className="content-card welcome-card">
               <h3>Get started</h3>
-              <p>Set up your outlets and menu, then choose an outlet to manage its inventory and reports.</p>
+              <p>Set up your outlets and menu, then choose an outlet for operations or open Reports to compare sales across outlets.</p>
               <div className="quick-actions">
                 <button onClick={() => setHqSection('outlets')}>Manage outlets</button>
                 <button className="secondary-button" onClick={() => setHqSection('menu')}>Manage menu</button>
@@ -781,13 +797,49 @@ function App() {
             </section>}
           </div>}
 
+          {hqSection === 'reports' && <div className="page-content">
+            <div className="page-heading"><div><p className="eyebrow">Company performance</p><h2>Sales reports</h2></div></div>
+            <section className="content-card">
+              <p className="muted">Compare total revenue and the top five selling items for each outlet.</p>
+              <div className="form-grid report-filters">
+                <label htmlFor="report-outlet-filter">Outlet<select id="report-outlet-filter" value={reportOutletFilter} onChange={(event) => setReportOutletFilter(event.target.value)}>
+                  <option value="">All outlets</option>
+                  {outlets.map((outlet) => <option value={outlet.id} key={outlet.id}>{outlet.name}</option>)}
+                </select></label>
+                <label htmlFor="report-from">From<input id="report-from" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} /></label>
+                <label htmlFor="report-to">To<input id="report-to" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} /></label>
+                <button type="button" onClick={loadCompanyReports}>Load reports</button>
+              </div>
+            </section>
+            {companyReports !== null && (companyReports.length > 0
+              ? <>
+                <section className="content-card report-summary">
+                  <span>Total revenue across selected outlets</span>
+                  <strong>{companyReports.reduce((total, report) => total + report.totalRevenue, 0).toFixed(2)}</strong>
+                </section>
+                <div className="report-outlet-grid">
+                  {companyReports.map((report) => <section className="content-card report-outlet-card" key={report.outletId}>
+                    <div className="outlet-card-heading">
+                      <div><h3>{report.outletName}</h3><p className="muted">Total revenue</p></div>
+                      <strong className="report-outlet-revenue">{report.totalRevenue.toFixed(2)}</strong>
+                    </div>
+                    <h4>Top 5 selling items</h4>
+                    {report.topItems.length > 0
+                      ? <ol className="report-top-items">{report.topItems.map((item) => <li key={item.menuItemId}><span>{item.name}</span><strong>{item.quantity} sold</strong></li>)}</ol>
+                      : <p className="empty-state">No sales in this date range.</p>}
+                  </section>)}
+                </div>
+              </>
+              : <section className="content-card empty-state"><p>No outlets match this report filter.</p></section>)}
+          </div>}
+
           {hqSection === 'operations' && <div className="page-content">
             <div className="page-heading"><div><p className="eyebrow">{outletLabel ?? 'Select a working outlet to begin'}</p><h2>Operations</h2></div></div>
             {!outletId
-              ? <section className="content-card empty-state"><h3>No outlet selected</h3><p>Choose an outlet from the sidebar to manage its menu, inventory, sales, and reports.</p></section>
+              ? <section className="content-card empty-state"><h3>No outlet selected</h3><p>Choose an outlet from the sidebar to manage its menu, inventory, and sales.</p></section>
               : <>
                 <nav className="section-nav" aria-label="Outlet operations">
-                  {(['menu', 'inventory', 'sales', 'reports'] as const).map((item) => <button
+                  {(['menu', 'inventory', 'sales'] as const).map((item) => <button
                     key={item}
                     type="button"
                     className={operationSection === item ? 'section-nav-item active' : 'section-nav-item'}
@@ -844,13 +896,6 @@ function App() {
                     </>}
                     {receipt && <p className="success-message">{receipt}</p>}
                   </div>
-                </section>}
-                {operationSection === 'reports' && <section className="content-card">
-                  <h3>Reports</h3>
-                  <p className="muted">Review revenue and top-selling items for {outletLabel ?? 'this outlet'}.</p>
-                  <button onClick={loadReports}>Load reports</button>
-                  {revenue !== null && <p className="report-total">Total revenue: {revenue.toFixed(2)}</p>}
-                  {topItems.length > 0 && <ul className="item-list">{topItems.map((item) => <li key={item.menuItemId}><span>{item.name}</span><strong>{item.quantity} sold</strong></li>)}</ul>}
                 </section>}
               </>}
           </div>}

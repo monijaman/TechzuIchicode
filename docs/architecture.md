@@ -2,7 +2,7 @@
 
 This document explains how the F&B Outlet Management System is built today, how it scales to 10 outlets and about 100,000 transactions a month, and how it can evolve into services and support offline POS and KDS operation.
 
-The C4 model lives in [`workspace.dsl`](workspace.dsl) (run `docker compose up structurizr` and open <http://localhost:8080>). The data model is in [`erd.md`](erd.md).
+The C4 model source lives in [`workspace.dsl`](workspace.dsl), and its exported diagrams are in [`c4/`](c4). The data model is in [`erd.md`](erd.md). The current Docker Compose file does not run Structurizr.
 
 ## 1. System overview
 

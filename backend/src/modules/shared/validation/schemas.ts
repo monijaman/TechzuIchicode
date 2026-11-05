@@ -80,6 +80,16 @@ export const revenueReportQuerySchema = z.object({
   }
 });
 
+export const companyReportQuerySchema = z.object({
+  outletId: z.string().uuid().optional(),
+  from: reportDateSchema.optional(),
+  to: reportDateSchema.optional()
+}).superRefine(({ from, to }, context) => {
+  if (from && to && Date.parse(from) > Date.parse(to)) {
+    context.addIssue({ code: 'custom', message: '`to` must not precede `from`', path: ['to'] });
+  }
+});
+
 export const topItemsReportQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(5)
 });
