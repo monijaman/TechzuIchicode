@@ -34,6 +34,15 @@ export const companyIdParamSchema = z.object({
   companyId: z.string().uuid()
 });
 
+export const companyUserParamsSchema = z.object({
+  companyId: z.string().uuid(),
+  userId: z.string().uuid()
+});
+
+export const updateUserOutletSchema = z.object({
+  outletId: z.string().uuid()
+});
+
 export const outletIdParamSchema = z.object({
   outletId: z.string().uuid()
 });

@@ -33,3 +33,20 @@ export async function listCompanyUsers(companyId: string) {
     orderBy: [{ role: 'asc' }, { email: 'asc' }]
   });
 }
+
+export async function updateCompanyUserOutlet(companyId: string, userId: string, outletId: string) {
+  const [user, outlet] = await Promise.all([
+    prisma.user.findFirst({ where: { id: userId, companyId }, select: { id: true, role: true } }),
+    prisma.outlet.findFirst({ where: { id: outletId, companyId }, select: { id: true } })
+  ]);
+  if (!user) throw new AppError(404, 'NOT_FOUND', 'User was not found for this company');
+  if (user.role !== 'OUTLET') throw new AppError(400, 'INVALID_USER_ROLE', 'Only outlet users can be assigned to an outlet');
+  if (!outlet) throw new AppError(404, 'NOT_FOUND', 'Outlet was not found for this company');
+
+  const updatedUser = await prisma.user.update({
+    where: { id: user.id },
+    data: { outletId },
+    select: { id: true, outletId: true, outlet: { select: { name: true } } }
+  });
+  return updatedUser;
+}

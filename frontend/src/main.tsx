@@ -130,6 +130,9 @@ function App() {
   const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | Role>('ALL');
   const [userOutletFilter, setUserOutletFilter] = useState('ALL');
   const [userSearch, setUserSearch] = useState('');
+  const [editingUserId, setEditingUserId] = useState('');
+  const [editingUserOutletId, setEditingUserOutletId] = useState('');
+  const [updatingUserOutlet, setUpdatingUserOutlet] = useState(false);
 
   // Replaces the errors for the checked fields only, so other forms keep theirs.
   const validate = (checks: Record<string, string | undefined>) => {
@@ -566,6 +569,25 @@ function App() {
       setCreatingUser(false);
     }
   };
+  const updateUserOutlet = async (event: FormEvent<HTMLFormElement>, userId: string) => {
+    event.preventDefault();
+    setUserSuccess('');
+    setUserError('');
+    setUpdatingUserOutlet(true);
+    try {
+      await call(`/companies/${session!.companyId}/users/${userId}/outlet`, {
+        method: 'PUT',
+        body: JSON.stringify({ outletId: editingUserOutletId })
+      });
+      setEditingUserId('');
+      setUserSuccess('User outlet updated successfully.');
+      await loadCompanyUsers();
+    } catch (error) {
+      setUserError(errorText(error, 'Failed to update user outlet.'));
+    } finally {
+      setUpdatingUserOutlet(false);
+    }
+  };
 
   const outletLabel = outlets.find((outlet) => outlet.id === outletId)?.name;
   const selectedMenuItemAssigned = assignmentOutletMenu.some((item) => item.id === masterItemId);
@@ -800,11 +822,11 @@ function App() {
                 {operationSection === 'sales' && <section className="content-card">
                   <h3>Create a sale</h3>
                   <p className="muted">Add one or more items. Select an item and add it to the sale; repeat for each item.</p>
-                  <div className="form-grid">
+                  {outletMenu.length > 0 ? <div className="form-grid">
                     <label>Menu item<select value={outletItemId} aria-invalid={Boolean(fieldErrors.outletItemId)} aria-describedby={fieldErrors.outletItemId ? 'sale-item-error' : undefined} onBlur={() => setFieldError('outletItemId', outletItemId ? undefined : 'Choose a menu item.')} onChange={(event) => { setOutletItemId(event.target.value); setFieldError('outletItemId', event.target.value ? undefined : 'Choose a menu item.'); }}><option value="">Choose item</option>{outletMenu.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>{fieldErrors.outletItemId && <span className="field-error" id="sale-item-error">{fieldErrors.outletItemId}</span>}</label>
                     <label>Quantity<input type="number" min="1" max="2147483647" step="1" value={cartQuantity} aria-invalid={Boolean(fieldErrors.cartQuantity)} aria-describedby={fieldErrors.cartQuantity ? 'sale-quantity-error' : undefined} onBlur={() => { const quantity = Number(cartQuantity); setFieldError('cartQuantity', cartQuantity.trim() && (!Number.isInteger(quantity) || quantity < 1 || quantity > 2147483647) ? 'Quantity must be a whole number from 1 to 2,147,483,647.' : undefined); }} onChange={(event) => { setCartQuantity(event.target.value); if (fieldErrors.cartQuantity) { const quantity = Number(event.target.value); setFieldError('cartQuantity', event.target.value.trim() && (!Number.isInteger(quantity) || quantity < 1 || quantity > 2147483647) ? 'Quantity must be a whole number from 1 to 2,147,483,647.' : undefined); } }} />{fieldErrors.cartQuantity && <span className="field-error" id="sale-quantity-error">{fieldErrors.cartQuantity}</span>}</label>
                     <button onClick={addToCart}>Add item to sale</button>
-                  </div>
+                  </div> : <p className="empty-state">No menu items are assigned to this outlet. Ask HQ to assign menu items before creating a sale.</p>}
                   <div className="cart-panel">
                     <div className="cart-heading"><h4>Items in this sale <span className="count-badge">{cart.length}</span></h4>{cart.length > 0 && <button className="text-button" onClick={clearCart}>Clear sale</button>}</div>
                     {cart.length > 0
@@ -866,8 +888,19 @@ function App() {
               </div>
               {filteredCompanyUsers.length > 0
                 ? <ul className="item-list user-directory">{filteredCompanyUsers.map((user) => <li key={user.id}>
-                  <span><strong>{user.email}</strong><small>{user.role === 'HQ' ? 'Head office' : user.outlet?.name ?? 'Outlet not assigned'} · {user.isActive ? 'Active' : 'Inactive'}</small></span>
-                  <small>Added {new Date(user.createdAt).toLocaleDateString()}</small>
+                  <span><strong>{user.email}{user.role === 'OUTLET' && <small> · {user.outlet?.name ?? 'Outlet not assigned'}</small>}</strong><small>{user.role === 'HQ' ? 'Head office' : 'Outlet'} · {user.isActive ? 'Active' : 'Inactive'}</small></span>
+                  <div className="user-directory-actions">
+                    <small>Added {new Date(user.createdAt).toLocaleDateString()}</small>
+                    {user.role === 'OUTLET' && (editingUserId === user.id
+                      ? <form className="user-outlet-edit" onSubmit={(event) => void updateUserOutlet(event, user.id)}>
+                        <label htmlFor={`user-outlet-${user.id}`}>Outlet<select id={`user-outlet-${user.id}`} value={editingUserOutletId} onChange={(event) => setEditingUserOutletId(event.target.value)} required>
+                          {outlets.map((outlet) => <option value={outlet.id} key={outlet.id}>{outlet.name}</option>)}
+                        </select></label>
+                        <button type="submit" disabled={updatingUserOutlet || editingUserOutletId === user.outletId}>{updatingUserOutlet ? 'Saving…' : 'Save'}</button>
+                        <button type="button" className="secondary-button" onClick={() => setEditingUserId('')} disabled={updatingUserOutlet}>Cancel</button>
+                      </form>
+                      : <button type="button" className="secondary-button" onClick={() => { setEditingUserId(user.id); setEditingUserOutletId(user.outletId ?? ''); }}>Change outlet</button>)}
+                  </div>
                 </li>)}</ul>
                 : <p className="empty-state">{companyUsers.length ? 'No users match these filters.' : 'No users found.'}</p>}
             </section>
@@ -935,7 +968,9 @@ function App() {
                 <div className="page-heading"><div><p className="eyebrow">Point of sale</p><h2>Create a sale</h2></div></div>
                 <section className="content-card">
                   <p className="muted">Choose from the outlet menu and add one or more items. Stock is deducted when the sale is completed.</p>
-                  {(cart.length === 0 || addingAnotherSaleItem) ? <>
+                  {outletMenu.length === 0
+                    ? <p className="empty-state">No menu items are assigned to this outlet. Ask HQ to assign menu items before creating a sale.</p>
+                    : (cart.length === 0 || addingAnotherSaleItem) ? <>
                   <label>Menu item<select value={outletItemId} aria-invalid={Boolean(fieldErrors.outletItemId)} aria-describedby={fieldErrors.outletItemId ? 'outlet-sale-item-error' : undefined} onChange={(event) => { setOutletItemId(event.target.value); setFieldError('outletItemId', event.target.value ? undefined : 'Choose a menu item.'); setFieldError('cartQuantity', saleQuantityError(cartQuantity, event.target.value)); }}><option value="">Choose item</option>{outletMenu.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>{fieldErrors.outletItemId && <span className="field-error" id="outlet-sale-item-error">{fieldErrors.outletItemId}</span>}</label>
                   {selectedSaleItem && <p className="sale-stock-status" role="status">
                     Available stock for <strong>{selectedSaleItem.name}</strong>:{' '}

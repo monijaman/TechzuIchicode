@@ -114,4 +114,32 @@ describe('master menu management', () => {
     expect(JSON.stringify(response.body)).not.toContain('passwordHash');
     await api.get(`/api/companies/${hq.company.id}/users`).set('Authorization', otherCompany.auth).expect(403);
   });
+
+  it('allows HQ to reassign an outlet user to another outlet in the same company', async () => {
+    const hq = await registerHq();
+    const firstOutlet = await createOutletAs(hq.auth, hq.company.id, 'First Outlet');
+    const secondOutlet = await createOutletAs(hq.auth, hq.company.id, 'Second Outlet');
+    const userResponse = await api.post(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth)
+      .send({ email: `reassign-${crypto.randomUUID()}@example.com`, password: 'a-long-test-password', role: 'OUTLET', outletId: firstOutlet.id }).expect(201);
+
+    await api.put(`/api/companies/${hq.company.id}/users/${userResponse.body.id}/outlet`).set('Authorization', hq.auth)
+      .send({ outletId: secondOutlet.id }).expect(200).expect(({ body }) => {
+        expect(body).toMatchObject({ id: userResponse.body.id, outletId: secondOutlet.id, outlet: { name: 'Second Outlet' } });
+      });
+
+    const users = await api.get(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth).expect(200);
+    expect(users.body.items.find((user: { id: string }) => user.id === userResponse.body.id).outletId).toBe(secondOutlet.id);
+  });
+
+  it('does not allow assigning an outlet user to another company outlet', async () => {
+    const hq = await registerHq();
+    const otherCompany = await registerHq('Other Company');
+    const outlet = await createOutletAs(hq.auth, hq.company.id);
+    const otherOutlet = await createOutletAs(otherCompany.auth, otherCompany.company.id);
+    const userResponse = await api.post(`/api/companies/${hq.company.id}/users`).set('Authorization', hq.auth)
+      .send({ email: `reassign-${crypto.randomUUID()}@example.com`, password: 'a-long-test-password', role: 'OUTLET', outletId: outlet.id }).expect(201);
+
+    await api.put(`/api/companies/${hq.company.id}/users/${userResponse.body.id}/outlet`).set('Authorization', hq.auth)
+      .send({ outletId: otherOutlet.id }).expect(404);
+  });
 });

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { requireHq } from '@/http/auth';
 import { AppError, validateBody, validateParams } from '@/http/errors';
-import { companyIdParamSchema, createCompanySchema, createOutletSchema, createUserSchema } from '@/modules/shared/validation/schemas';
-import { createCompany, createOutlet, listCompanyUsers, listOutlets } from './organization.service';
+import { companyIdParamSchema, companyUserParamsSchema, createCompanySchema, createOutletSchema, createUserSchema, updateUserOutletSchema } from '@/modules/shared/validation/schemas';
+import { createCompany, createOutlet, listCompanyUsers, listOutlets, updateCompanyUserOutlet } from './organization.service';
 import { createUser } from '@/modules/auth/auth.service';
 
 export const organizationRouter = Router();
@@ -35,4 +35,10 @@ organizationRouter.post('/companies/:companyId/users', requireHq, validateParams
   const { companyId } = request.params as { companyId: string };
   if (!request.auth?.testBypass && request.auth?.companyId !== companyId) throw new AppError(403, 'FORBIDDEN', 'You cannot create users for another company');
   response.status(201).json(await createUser(companyId, request.body.email, request.body.password, request.body.role, request.body.outletId));
+});
+
+organizationRouter.put('/companies/:companyId/users/:userId/outlet', requireHq, validateParams(companyUserParamsSchema), validateBody(updateUserOutletSchema), async (request, response) => {
+  const { companyId, userId } = request.params as { companyId: string; userId: string };
+  if (!request.auth?.testBypass && request.auth?.companyId !== companyId) throw new AppError(403, 'FORBIDDEN', 'You cannot update users for another company');
+  response.status(200).json(await updateCompanyUserOutlet(companyId, userId, request.body.outletId));
 });

@@ -85,7 +85,7 @@ HQ manages the master menu and outlet assignments. Each outlet accesses its assi
    docker compose up --build
    ```
 
-3. Open the app at <http://localhost:3000>. The API is at <http://localhost:5000/api> and the C4 diagrams are at <http://localhost:8080>.
+3. Open the app at <http://localhost:3105>. The API container is published on port `5105`; check <http://localhost:5105/health> for its health status. API routes are under `/api` (there is no page at the `/api` root).
 
 4. Optional: load the demo data. This **wipes** the development database first.
 
@@ -152,6 +152,7 @@ Base URL: `/api`. All routes except `/auth/*` need `Authorization: Bearer <acces
 | `GET` | `/companies/:companyId/outlets` | HQ | List outlets |
 | `POST` | `/companies/:companyId/outlets` | HQ | Create an outlet |
 | `POST` | `/companies/:companyId/users` | HQ | Create an HQ or outlet user |
+| `PUT` | `/companies/:companyId/users/:userId/outlet` | HQ | Reassign an outlet user to an outlet in the same company |
 | `GET` | `/menu-items` | HQ | List the company master menu |
 | `POST` | `/menu-items` | HQ | Create a master menu item |
 | `PUT` | `/menu-items/:menuItemId` | HQ | Update name and/or base price |
